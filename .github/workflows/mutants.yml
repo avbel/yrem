@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,7 +24,6 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants@27.1.0
-      # Surviving mutants in ops, error, mcp and time get an issue each (filed manually).
       - name: Run cargo-mutants
         run: >
           cargo mutants --in-place --no-shuffle
@@ -35,3 +35,17 @@ jobs:
           name: mutants-out
           path: mutants.out
           if-no-files-found: warn
+      - name: Open an issue per surviving mutant
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -s mutants.out/missed.txt ] || exit 0
+          while IFS= read -r mutant; do
+            title="Surviving mutant: $mutant"
+            existing=$(gh issue list --state open --search "\"$mutant\" in:title" --json title -q ".[] | select(.title == \"$title\") | .title")
+            if [ -z "$existing" ]; then
+              gh issue create --title "$title" \
+                --body "Weekly cargo-mutants run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Add a test that fails with this mutation applied."
+            fi
+          done < mutants.out/missed.txt
