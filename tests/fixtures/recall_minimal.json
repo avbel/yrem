@@ -10,19 +10,19 @@
     "results": [
       {
         "certainty": 1.0,
-        "created_at": 1793375496.616506,
+        "created_at": 1793392814.869993,
         "domain": "work",
         "importance": 0.7,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "payments",
-        "rid": "01a18d82-69a8-74aa-9241-d965b4bd0b35",
-        "score": 0.5227601661197839,
+        "rid": "01a18e8a-ab15-7f0f-8047-e53e026b730c",
+        "score": 0.48180025186072584,
         "source": "user",
         "text": "Alice leads the payments team",
         "valence": 0.0,
         "why_retrieved": [
-          "semantically similar (0.80)",
+          "semantically similar (0.64)",
           "recent",
           "important (decay=0.70)",
           "keyword_match",
@@ -31,19 +31,19 @@
       },
       {
         "certainty": 1.0,
-        "created_at": 1793375496.549744,
+        "created_at": 1793392814.704828,
         "domain": "",
         "importance": 0.5,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "default",
-        "rid": "01a18d82-6965-7f1f-99b3-1e170db6afe8",
-        "score": 0.5111813852417493,
+        "rid": "01a18e8a-aa70-7182-9d04-5bb5dc14c9b1",
+        "score": 0.4725601072440759,
         "source": "user",
         "text": "Alice leads the payments team",
         "valence": 0.0,
         "why_retrieved": [
-          "semantically similar (0.80)",
+          "semantically similar (0.64)",
           "recent",
           "important (decay=0.50)",
           "keyword_match",
@@ -52,7 +52,7 @@
       },
       {
         "certainty": 0.9,
-        "created_at": 1793375496.463076,
+        "created_at": 1793392814.669719,
         "domain": "work",
         "importance": 0.8,
         "memory_type": "semantic",
@@ -61,8 +61,8 @@
           "team": "payments"
         },
         "namespace": "payments",
-        "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb",
-        "score": 0.26263083388973946,
+        "rid": "01a18e8a-aa4d-786a-a95e-2944a7bb906a",
+        "score": 0.27787474543178375,
         "source": "user",
         "text": "Payments service uses PostgreSQL",
         "valence": 0.1,
@@ -70,20 +70,19 @@
           "recent",
           "important (decay=0.80)",
           "keyword_match",
-          "multi-lane agreement (2 lanes)",
-          "\u26a0 unresolved high conflict (preference) with 01a18d82-69fe-720b-8822-753be4726c9d \u2014 verify before relying"
+          "multi-lane agreement (2 lanes)"
         ]
       },
       {
         "certainty": 1.0,
-        "created_at": 1793375496.702969,
+        "created_at": 1793392814.933114,
         "domain": "work",
         "importance": 0.5,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "payments",
-        "rid": "01a18d82-69fe-720b-8822-753be4726c9d",
-        "score": 0.23806517956974305,
+        "rid": "01a18e8a-ab55-779d-acc7-d117917fc6b8",
+        "score": 0.2745501483480249,
         "source": "user",
         "text": "The payments service database is MySQL",
         "valence": 0.0,
@@ -91,20 +90,19 @@
           "recent",
           "important (decay=0.50)",
           "keyword_match",
-          "multi-lane agreement (2 lanes)",
-          "\u26a0 unresolved high conflict (preference) with 01a18d82-690f-7a90-b75b-2331ceea45eb \u2014 verify before relying"
+          "multi-lane agreement (2 lanes)"
         ]
       },
       {
         "certainty": 1.0,
-        "created_at": 1793375496.616506,
+        "created_at": 1793392814.869993,
         "domain": "work",
         "importance": 0.5,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "payments",
-        "rid": "01a18d82-69a9-78d9-b7d8-b1e3e2f25d4e",
-        "score": 0.23175052426204826,
+        "rid": "01a18e8a-ab19-707e-8f22-ebf601697aef",
+        "score": 0.24400571810963298,
         "source": "user",
         "text": "The payments service is deployed on Kubernetes",
         "valence": 0.0,
@@ -117,14 +115,14 @@
       },
       {
         "certainty": 1.0,
-        "created_at": 1793375496.616506,
+        "created_at": 1793392814.869993,
         "domain": "work",
         "importance": 0.5,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "payments",
-        "rid": "01a18d82-69ab-747e-8067-7394116d942b",
-        "score": 0.19213385349606096,
+        "rid": "01a18e8a-ab20-7470-994d-91fe024dcf31",
+        "score": 0.2349839633281443,
         "source": "user",
         "text": "The payments service runs nightly reconciliation at 02:00 UTC",
         "valence": 0.0,
@@ -137,14 +135,14 @@
       },
       {
         "certainty": 1.0,
-        "created_at": 1793375496.616506,
+        "created_at": 1793392814.869993,
         "domain": "work",
         "importance": 0.5,
         "memory_type": "episodic",
         "metadata": {},
         "namespace": "billing",
-        "rid": "01a18d82-69aa-7981-b441-9dd3cf7af190",
-        "score": 0.15496557124744478,
+        "rid": "01a18e8a-ab1d-793c-b191-6dad1e2b50f3",
+        "score": 0.20558960837407894,
         "source": "user",
         "text": "Bob maintains the billing dashboard",
         "valence": 0.0,
@@ -155,16 +153,55 @@
       },
       {
         "certainty": 1.0,
-        "created_at": 1793375496.7665448,
-        "domain": "work",
+        "created_at": 1793392813.823601,
+        "domain": "",
+        "importance": 0.7,
+        "memory_type": "semantic",
+        "metadata": {
+          "due_at": 1893456000,
+          "kind": "fact"
+        },
+        "namespace": "ops",
+        "rid": "01a18e8a-a6ff-7c1c-b041-4debf543f6fa",
+        "score": 0.1094485558243419,
+        "source": "user",
+        "text": "Alice owns the Zephyr ledger migration",
+        "valence": 0.0,
+        "why_retrieved": [
+          "recent",
+          "important (decay=0.70)"
+        ]
+      },
+      {
+        "certainty": 1.0,
+        "created_at": 1793392814.536762,
+        "domain": "",
         "importance": 0.5,
         "memory_type": "semantic",
         "metadata": {},
-        "namespace": "payments",
-        "rid": "01a18d82-6a3e-7143-ade1-6166a4507d72",
-        "score": 0.0847695385878244,
+        "namespace": "ops",
+        "rid": "01a18e8a-a9c8-76c8-b686-f78277a7e8ce",
+        "score": 0.07903381066122646,
         "source": "user",
-        "text": "Carol is the on-call engineer this week",
+        "text": "Bob reviews the Zephyr ledger migration",
+        "valence": 0.0,
+        "why_retrieved": [
+          "recent",
+          "important (decay=0.50)"
+        ]
+      },
+      {
+        "certainty": 1.0,
+        "created_at": 1793392813.876142,
+        "domain": "",
+        "importance": 0.5,
+        "memory_type": "semantic",
+        "metadata": {},
+        "namespace": "ops",
+        "rid": "01a18e8a-a734-7d24-bc29-511f37d3d827",
+        "score": 0.05654678071433164,
+        "source": "user",
+        "text": "Review the Zephyr ledger runbook",
         "valence": 0.0,
         "why_retrieved": [
           "recent",
@@ -172,6 +209,6 @@
         ]
       }
     ],
-    "total": 8
+    "total": 10
   }
 }

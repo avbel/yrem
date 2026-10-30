@@ -4,13 +4,13 @@
   "request": null,
   "status": 200,
   "response": {
-    "active_memories": 8,
-    "consolidated_memories": 0,
-    "edges": 3,
-    "entities": 6,
+    "active_memories": 10,
+    "consolidated_memories": 3,
+    "edges": 4,
+    "entities": 9,
     "open_conflicts": 0,
-    "operations": 12,
-    "pending_triggers": 0,
-    "tombstoned_memories": 0
+    "operations": 55,
+    "pending_triggers": 4,
+    "tombstoned_memories": 2
   }
 }

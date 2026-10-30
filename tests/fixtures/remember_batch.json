@@ -4,38 +4,38 @@
   "request": {
     "memories": [
       {
-        "text": "Alice leads the payments team",
-        "namespace": "payments",
         "domain": "work",
-        "importance": 0.7
-      },
-      {
-        "text": "The payments service is deployed on Kubernetes",
+        "importance": 0.7,
         "namespace": "payments",
-        "domain": "work"
+        "text": "Alice leads the payments team"
       },
       {
-        "text": "Bob maintains the billing dashboard",
+        "domain": "work",
+        "namespace": "payments",
+        "text": "The payments service is deployed on Kubernetes"
+      },
+      {
+        "domain": "work",
+        "memory_type": "episodic",
         "namespace": "billing",
-        "domain": "work",
-        "memory_type": "episodic"
+        "text": "Bob maintains the billing dashboard"
       },
       {
-        "text": "The payments service runs nightly reconciliation at 02:00 UTC",
+        "domain": "work",
         "namespace": "payments",
-        "domain": "work"
+        "text": "The payments service runs nightly reconciliation at 02:00 UTC"
       }
     ]
   },
   "status": 200,
   "response": {
     "count": 4,
-    "log_index": 6,
+    "log_index": 11,
     "rids": [
-      "01a18d82-69a8-74aa-9241-d965b4bd0b35",
-      "01a18d82-69a9-78d9-b7d8-b1e3e2f25d4e",
-      "01a18d82-69aa-7981-b441-9dd3cf7af190",
-      "01a18d82-69ab-747e-8067-7394116d942b"
+      "01a18e8a-ab15-7f0f-8047-e53e026b730c",
+      "01a18e8a-ab19-707e-8f22-ebf601697aef",
+      "01a18e8a-ab1d-793c-b191-6dad1e2b50f3",
+      "01a18e8a-ab20-7470-994d-91fe024dcf31"
     ]
   }
 }

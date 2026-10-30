@@ -2,13 +2,13 @@
   "method": "POST",
   "path": "/v1/remember",
   "request": {
-    "text": "The payments service database is MySQL",
+    "domain": "work",
     "namespace": "payments",
-    "domain": "work"
+    "text": "The payments service database is MySQL"
   },
   "status": 200,
   "response": {
-    "log_index": 7,
-    "rid": "01a18d82-69fe-720b-8822-753be4726c9d"
+    "log_index": 12,
+    "rid": "01a18e8a-ab55-779d-acc7-d117917fc6b8"
   }
 }

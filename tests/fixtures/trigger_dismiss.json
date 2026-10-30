@@ -1,12 +1,12 @@
 {
   "method": "POST",
-  "path": "/v1/triggers/01a18dce-949b-79ea-a2e7-b5fe5f135e81/dismiss",
+  "path": "/v1/triggers/01a18e8a-a8c7-7a8f-b1df-ff857f31db4a/dismiss",
   "request": {},
   "response": {
     "action": "dismiss",
     "changed": true,
     "node_local": true,
-    "trigger_id": "01a18dce-949b-79ea-a2e7-b5fe5f135e81"
+    "trigger_id": "01a18e8a-a8c7-7a8f-b1df-ff857f31db4a"
   },
   "status": 200
 }

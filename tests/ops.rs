@@ -24,7 +24,7 @@ use yrem::ops::{
     ThinkArgs,
 };
 
-const OLD_RID: &str = "01a18d82-690f-7a90-b75b-2331ceea45eb";
+const OLD_RID: &str = "01a18e8a-aa4d-786a-a95e-2944a7bb906a";
 const NEW_RID: &str = "01a18d90-0000-7000-8000-000000000001";
 
 fn app(srv: &FakeServer) -> App {
@@ -69,8 +69,8 @@ async fn remember_single_fixture() {
         })
         .await
         .unwrap();
-    assert_eq!(out["rid"], "01a18d82-690f-7a90-b75b-2331ceea45eb");
-    assert_eq!(out["log_index"], 1);
+    assert_eq!(out["rid"], "01a18e8a-aa4d-786a-a95e-2944a7bb906a");
+    assert_eq!(out["log_index"], 6);
     srv.assert_done();
     let body = &srv.requests()[0].body;
     assert_eq!(body["text"], "Payments service uses PostgreSQL");
@@ -216,8 +216,8 @@ async fn recall_fixture_shaping() {
     let hits = out["results"].as_array().unwrap();
     assert!(!hits.is_empty());
     let first = &hits[0];
-    assert_eq!(first["score"], 0.5646, "rounded to 4 dp");
-    assert_eq!(first["created_at_iso"], "2026-10-30T15:51:36Z");
+    assert_eq!(first["score"], 0.5721, "rounded to 4 dp");
+    assert_eq!(first["created_at_iso"], "2026-10-30T20:40:14Z");
     assert!(first["created_at"].as_f64().unwrap() > 1.7e9);
     assert!(first["why_retrieved"].is_array());
     assert_eq!(out["fallback"], "fts5_keyword");
@@ -452,7 +452,7 @@ async fn forget_fixture() {
         .await
         .unwrap();
     assert_eq!(out["found"], true);
-    assert_eq!(out["rid"], "01a18d82-6965-7f1f-99b3-1e170db6afe8");
+    assert_eq!(out["rid"], "01a18e8a-aa70-7182-9d04-5bb5dc14c9b1");
     srv.assert_done();
 }
 
@@ -467,7 +467,8 @@ async fn think_fixture_rounds_floats() {
     srv.assert_done();
     assert_eq!(out["conflicts_found"], 1);
     assert_eq!(out["triggers"][0]["urgency"], 1.0);
-    assert_eq!(out["triggers"][1]["urgency"], 0.7603);
+    assert_eq!(out["triggers"][1]["urgency"], 0.9);
+    assert_eq!(out["triggers"][2]["urgency"], 0.7068);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -552,14 +553,14 @@ async fn conflict_list_query_string_and_fixture() {
     let c = &out["conflicts"][0];
     assert_eq!(c["priority"], "high");
     assert!(c.get("entity").is_none(), "null entity pruned");
-    assert_eq!(c["detected_at_iso"], "2026-10-30T15:51:43Z");
+    assert_eq!(c["detected_at_iso"], "2026-10-30T20:40:15Z");
     a.conflict_list(ConflictListArgs::default()).await.unwrap();
     srv.assert_done();
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn conflict_resolve_fixture() {
-    let id = "01a18d82-83dc-7e2d-b7c2-f390a01a2994";
+    let id = "01a18e8a-acf9-7cd7-bde6-7098c036c2d5";
     let srv = FakeServer::start(vec![
         Step::post(&format!("/v1/conflicts/{id}/resolve"))
             .body(|b| b["strategy"] == "keep_b" && b["resolution_note"] == "PostgreSQL confirmed")
@@ -628,7 +629,7 @@ async fn session_digest_include_gaps() {
         .unwrap();
     assert!(out["knowledge_gaps"].is_array());
     assert!(out.get("narrative_head").is_none(), "null pruned");
-    assert_eq!(out["pending_triggers"][1]["urgency"], 0.7603);
+    assert_eq!(out["pending_triggers"][1]["urgency"], 0.7132);
     a.session_digest(SessionDigestArgs::default())
         .await
         .unwrap();
@@ -701,27 +702,27 @@ async fn session_start_fixture() {
         })
         .await
         .unwrap();
-    assert_eq!(out["session_id"], "01a18d83-61a3-7c63-9b60-158c6e776718");
+    assert_eq!(out["session_id"], "01a18e8a-af32-70a3-b823-f881004b4a9d");
     srv.assert_done();
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn session_end_is_delete() {
     let srv = FakeServer::start(vec![
-        Step::delete("/v1/sessions/01a18d83-61a3-7c63-9b60-158c6e776718")
+        Step::delete("/v1/sessions/01a18e8a-af32-70a3-b823-f881004b4a9d")
             .body(|b| b["summary"] == "Reviewed payments architecture")
             .fixture("session_delete"),
     ]);
     let out = app(&srv)
         .session_end(SessionEndArgs {
             force: false,
-            session_id: s("01a18d83-61a3-7c63-9b60-158c6e776718"),
+            session_id: s("01a18e8a-af32-70a3-b823-f881004b4a9d"),
             summary: Some(s("Reviewed payments architecture")),
         })
         .await
         .unwrap();
     assert_eq!(out["memory_count"], 2);
-    assert_eq!(out["duration_secs"], 7.8134);
+    assert_eq!(out["duration_secs"], 3.1567);
     srv.assert_done();
 }
 
@@ -741,7 +742,7 @@ async fn memory_get_renames_type_and_metadata() {
     assert!(out.get("metadata_json").is_none());
     assert!(out.get("updated_at").is_none(), "null pruned");
     assert_eq!(out["text"], "Payments service uses PostgreSQL");
-    assert_eq!(out["created_at_iso"], "2026-10-30T15:51:36Z");
+    assert_eq!(out["created_at_iso"], "2026-10-30T20:40:14Z");
     assert!(out["last_access_iso"].is_string());
 }
 
@@ -770,7 +771,7 @@ async fn memory_current_fixture() {
     assert_eq!(out["found"], true);
     assert_eq!(
         out["record"]["text"],
-        "Carol is the on-call engineer this week"
+        "The payments service database is MySQL"
     );
     srv.assert_done();
 }
@@ -793,7 +794,7 @@ async fn memory_list_desc_and_legacy() {
         .await
         .unwrap();
     assert_eq!(out["records"].as_array().unwrap().len(), 2);
-    assert_eq!(out["records"][0]["created_at_iso"], "2026-10-30T15:51:36Z");
+    assert_eq!(out["records"][0]["created_at_iso"], "2026-10-30T20:40:14Z");
     let out = a
         .memory_list(MemoryListArgs {
             namespace: Some(s("payments")),
@@ -826,8 +827,8 @@ async fn memory_gaps_fixture() {
         .await
         .unwrap();
     assert_eq!(out["count"], 1);
-    assert_eq!(out["gaps"][0]["avg_top_score"], 0.1329);
-    assert_eq!(out["gaps"][0]["last_seen_iso"], "2026-10-30T15:52:47Z");
+    assert_eq!(out["gaps"][0]["avg_top_score"], 0.1225);
+    assert_eq!(out["gaps"][0]["last_seen_iso"], "2026-10-30T20:40:15Z");
     srv.assert_done();
 }
 
@@ -1658,7 +1659,7 @@ async fn temporal_stale_query_and_shaping() {
         .await
         .unwrap();
     assert_eq!(out["count"], 2);
-    assert_eq!(out["memories"][0]["created_at_iso"], "2026-08-01T17:14:48Z");
+    assert_eq!(out["memories"][0]["created_at_iso"], "2026-08-01T20:40:13Z");
     assert!(out["memories"][0].get("due_at").is_none(), "null pruned");
     a.temporal_stale(TemporalListArgs::default()).await.unwrap();
     srv.assert_done();
@@ -1888,13 +1889,13 @@ async fn claim_add_full_and_minimal() {
             valid_from: Some(s("1790000000")),
             valid_to: Some(s("2026-12-31")),
             confidence_band: Some(s("high")),
-            source_memory_rid: Some(s("01a18dcf-1ebd-78ea-9981-9fabefe5fc93")),
+            source_memory_rid: Some(s("01a18e8a-a9c8-76c8-b686-f78277a7e8ce")),
             weight: Some(0.8),
             ..claim_args()
         })
         .await
         .unwrap();
-    assert_eq!(out["claim_id"], "01a18dcf-1ed2-7ef7-9ef2-124133e63777");
+    assert_eq!(out["claim_id"], "01a18e8a-a9d9-79e4-b5ca-5c9293625c3a");
     a.claim_add(claim_args()).await.unwrap();
     srv.assert_done();
     let reqs = srv.requests();
@@ -1910,7 +1911,7 @@ async fn claim_add_full_and_minimal() {
     assert_eq!(b["confidence_band"], "high");
     assert_eq!(
         b["source_memory_rid"],
-        "01a18dcf-1ebd-78ea-9981-9fabefe5fc93"
+        "01a18e8a-a9c8-76c8-b686-f78277a7e8ce"
     );
     assert_eq!(b["weight"], 0.8);
     assert_eq!(

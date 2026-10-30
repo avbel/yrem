@@ -14,7 +14,7 @@
         "aged_last_verified": null,
         "best_span": null,
         "certainty": 1.0,
-        "created_at": 1793380488.343193,
+        "created_at": 1793392814.108556,
         "current_status": "active",
         "disputed_with": [],
         "domain": "deploy",
@@ -26,21 +26,21 @@
         "metadata": {},
         "namespace": "ops",
         "pack": null,
-        "rid": "01a18dce-9497-7bf0-a9df-d0e23201f4bd",
-        "score": 0.4659917863806126,
+        "rid": "01a18e8a-a81c-7233-97df-164419c4d789",
+        "score": 0.5113905927663599,
         "scores": {
           "contributions": {
-            "decay": 0.04499817420851339,
+            "decay": 0.04499999474786974,
             "graph_proximity": 0.0,
-            "importance": 0.7008134098839447,
-            "recency": 0.07499560993888771,
-            "similarity": 0.2749179196244194
+            "importance": 0.7172024657149335,
+            "recency": 0.07499998737129651,
+            "similarity": 0.356109156790045
           },
-          "decay": 0.8999634841702677,
+          "decay": 0.8999998949573947,
           "graph_proximity": 0.0,
           "importance": 0.9,
-          "recency": 0.9999414658518361,
-          "similarity": 0.5498358392488388,
+          "recency": 0.9999998316172869,
+          "similarity": 0.71221831358009,
           "valence_multiplier": 1.0
         },
         "source": "user",
@@ -48,7 +48,7 @@
         "text": "Procedure: to roll back a deploy, drain the queue then redeploy the previous tag",
         "valence": 0.0,
         "why_retrieved": [
-          "semantically similar (0.55)",
+          "semantically similar (0.71)",
           "recent",
           "important (decay=0.90)",
           "keyword_match",

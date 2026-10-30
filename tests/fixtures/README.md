@@ -1,10 +1,10 @@
 # yantrikdb-server HTTP API notes (captured from a real run)
 
-Server: yantrikdb-server 0.20.0 (`/v1/health/deep` -> `version.build_id: "0.20.0"`, wire 1.2), release build,
-single-node, embedding strategy `bundled` (potion-base-2M, dim 64, zero network). The default `builtin`
-strategy (fastembed/MiniLM from huggingface.co) could NOT be used: the sandbox proxy denies huggingface.co (403 CONNECT).
-All responses below are real. Base URL used: http://127.0.0.1:17438. Fixtures: this directory, one JSON per case
-`{method,path,request,status,response}` (`auth: "none"|"bad"` marks unauthenticated cases).
+Fixtures re-captured 2026-10-31 from the NAS scratch build: yantrikdb-server 0.20.0 (`/v1/health/deep` -> `version.build_id: "0.20.0"`, wire 1.2), release build,
+single-node, embedding strategy `builtin` (fastembed MiniLM, dim 384). All responses below are real, replayed in one run against a fresh scratch database
+(ops/temporal/triggers/claims first, then the payments flow, then sessions and digests). Fixtures: this directory, one JSON per case
+`{method,path,request,status,response}` (`auth: "none"|"bad"` marks unauthenticated cases). Same synthetic requests as the earlier potion-base-2M (dim 64) capture;
+the response shapes did not change, only values did: scores/similarities (MiniLM), rids, timestamps, counts.
 
 ## Conventions
 - Auth: `Authorization: Bearer ydb_...` (per-database token; `yantrikdb token --data-dir D create --db NAME`). The token selects the database; there is no db in the URL.
@@ -52,7 +52,7 @@ Body ignored (any/no JSON). Response: `{"error":"not_yet_available_over_http","o
 ## POST /v1/think -> 200
 Request (all optional; send `{}` - JSON content-type still required): `run_consolidation` bool (true), `run_conflict_scan` bool (true; alias `run_conflicts`), `run_pattern_mining` bool (FALSE; alias `run_patterns`), `run_personality` bool (true), `consolidation_limit` u64 (50), `consolidation_time_window_days` f64, `min_active_memories` i64, `max_triggers` u64.
 Response: `{"consolidation_count":int,"conflicts_found":int,"patterns_new":int,"patterns_updated":int,"personality_updated":bool,"duration_ms":int,"triggers":[{"trigger_type":"redundancy"|"potential_conflict"|"surprise_connection"|...,"reason":string,"urgency":f64,"source_rids":[string],"suggested_action":string}]}`.
-Fixtures: think.json (found the MySQL-vs-PostgreSQL conflict, conflicts_found 1), think_full.json (pattern mining on; conflicts_found 0 because already recorded)
+With MiniLM `consolidation_count` can be > 0: near-duplicate memories are consolidated (think.json: 2; stats then show `consolidated_memories` 3). Triggers already persisted by an earlier think (decay_review, temporal_drift) are listed again. Fixtures: think.json (found the MySQL-vs-PostgreSQL conflict, conflicts_found 1, consolidation_count 2, 4 triggers), think_full.json (pattern mining on: patterns_new 8, patterns_updated 1; conflicts_found 0 because already recorded)
 
 ## POST /v1/relate -> 200 (DEPRECATED)
 Request: `entity` string REQUIRED, `target` string REQUIRED, `relationship` string REQUIRED (each missing -> 400 `missing '<field>'`); optional `weight` f64 (1.0), `namespace` string (""). Response: `{"edge_id":string,"log_index":int}` with response headers `deprecation: true` and `link: </v1/claim>; rel="successor-version"`. Fixtures: relate.json, relate2.json, relate_missing.json
@@ -112,7 +112,7 @@ Fixtures: temporal_as_of.json, temporal_as_of_empty.json, temporal_as_of_missing
 
 ## GET /v1/triggers and GET /v1/triggers/history -> 200
 Query: `limit` (20 / 50, capped 1000); history also `trigger_type`. Response: `{"triggers":[trigger],"count":int}`; trigger = `trigger_id, trigger_type ("decay_review"|"temporal_drift"|...), reason, urgency f64, suggested_action, source_rids [rid], context {..type specific}, status ("pending"|"delivered"|"acknowledged"|"acted"|"dismissed"), created_at, expires_at (+7d), delivered_at, acknowledged_at, acted_at` (timestamps null until set). /v1/triggers = pending only; history = all statuses (pending included), with `trigger_type` filter. Triggers come from POST /v1/think (`{"triggers":[{trigger_type,reason,urgency,suggested_action,source_rids}],...}` in its response; no trigger_id there); with fresh recent data think yields none.
-Fixtures: triggers.json (2 pending), triggers_limit.json, triggers_after.json (one dismissed), triggers_history_before.json, triggers_history.json, triggers_history_filtered.json
+Fixtures: triggers.json (2 pending), triggers_limit.json, triggers_after.json (1 pending decay_review of a second identical-text stale note; every other pending trigger was dismissed first), triggers_history_before.json, triggers_history.json, triggers_history_filtered.json
 
 ## POST /v1/triggers/{id}/{action}
 Actions: `acknowledge|deliver|act|dismiss`; body ignored (none needed). Node-local, no replication. 200 `{"trigger_id","action","changed":true,"node_local":true}`. Unknown action -> 400 `{"error":{"code":"generic","message":"unknown trigger action 'x' (acknowledge|deliver|act|dismiss)"}}`. Unknown id OR a transition the current state does not permit -> 404 `trigger '<id>' not found or not in a state that permits '<action>'`. Observed state machine: pending -deliver-> delivered -acknowledge-> acknowledged -act-> acted; dismiss works from pending; acknowledge/act from pending -> 404; repeating a transition -> 404; dismiss after act -> 404.

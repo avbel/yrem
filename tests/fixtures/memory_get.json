@@ -1,6 +1,6 @@
 {
   "method": "GET",
-  "path": "/v1/memory/01a18d82-690f-7a90-b75b-2331ceea45eb",
+  "path": "/v1/memory/01a18e8a-aa4d-786a-a95e-2944a7bb906a",
   "request": null,
   "status": 200,
   "response": {
@@ -10,8 +10,8 @@
     "consolidated_into": null,
     "consolidation_sources": [],
     "consolidation_status": "active",
-    "created_at": 1793375496.463076,
-    "created_at_iso": "2026-10-30T15:51:36Z",
+    "created_at": 1793392814.669719,
+    "created_at_iso": "2026-10-30T20:40:14Z",
     "domain": "work",
     "due_at": null,
     "embedding_bytes": null,
@@ -20,13 +20,13 @@
     "entities": [],
     "half_life": 241.92,
     "importance": 0.8,
-    "last_access": 1793375515.8631737,
+    "last_access": 1793392815.1039174,
     "metadata_json": {
       "kind": "fact",
       "team": "payments"
     },
     "namespace": "payments",
-    "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb",
+    "rid": "01a18e8a-aa4d-786a-a95e-2944a7bb906a",
     "session_id": null,
     "source": "user",
     "storage_tier": "hot",

@@ -7,7 +7,7 @@
   "status": 200,
   "response": {
     "found": true,
-    "log_index": 12,
+    "log_index": 16,
     "rid": "does-not-exist"
   }
 }

@@ -7,19 +7,19 @@
     "traits": [
       {
         "name": "attentiveness",
-        "score": 0.263
+        "score": 0.32
       },
       {
         "name": "depth",
-        "score": 0.411
+        "score": 0.4855799999999999
       },
       {
         "name": "energy",
-        "score": 0.19142857142857145
+        "score": 0.15477142857142856
       },
       {
         "name": "warmth",
-        "score": 0.50625
+        "score": 0.5006647727272727
       }
     ]
   }

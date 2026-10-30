@@ -1,6 +1,6 @@
 {
   "method": "POST",
-  "path": "/v1/conflicts/01a18d82-83dc-7e2d-b7c2-f390a01a2994/resolve",
+  "path": "/v1/conflicts/01a18e8a-acf9-7cd7-bde6-7098c036c2d5/resolve",
   "request": {
     "strategy": "keep_b"
   },
@@ -8,7 +8,7 @@
   "response": {
     "error": {
       "code": "generic",
-      "message": "sync error: conflict 01a18d82-83dc-7e2d-b7c2-f390a01a2994 is already resolved"
+      "message": "sync error: conflict 01a18e8a-acf9-7cd7-bde6-7098c036c2d5 is already resolved"
     }
   }
 }

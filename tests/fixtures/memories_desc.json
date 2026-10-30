@@ -5,31 +5,31 @@
   "status": 200,
   "response": {
     "limit": 2,
-    "next_cursor": "01a18d82-69ab-747e-8067-7394116d942b",
+    "next_cursor": "01a18e8a-ab20-7470-994d-91fe024dcf31",
     "records": [
       {
         "certainty": 1.0,
-        "created_at": 1793375496.7665448,
-        "created_at_iso": "2026-10-30T15:51:36Z",
+        "created_at": 1793392814.933114,
+        "created_at_iso": "2026-10-30T20:40:14Z",
         "domain": "work",
         "importance": 0.5,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "payments",
-        "rid": "01a18d82-6a3e-7143-ade1-6166a4507d72",
+        "rid": "01a18e8a-ab55-779d-acc7-d117917fc6b8",
         "source": "user",
-        "text": "Carol is the on-call engineer this week"
+        "text": "The payments service database is MySQL"
       },
       {
         "certainty": 1.0,
-        "created_at": 1793375496.616506,
-        "created_at_iso": "2026-10-30T15:51:36Z",
+        "created_at": 1793392814.869993,
+        "created_at_iso": "2026-10-30T20:40:14Z",
         "domain": "work",
         "importance": 0.5,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "payments",
-        "rid": "01a18d82-69ab-747e-8067-7394116d942b",
+        "rid": "01a18e8a-ab20-7470-994d-91fe024dcf31",
         "source": "user",
         "text": "The payments service runs nightly reconciliation at 02:00 UTC"
       }

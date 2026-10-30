@@ -7,7 +7,7 @@
     "capabilities": [
       "idempotency_key"
     ],
-    "engines_loaded": 1,
+    "engines_loaded": 2,
     "status": "ok"
   }
 }

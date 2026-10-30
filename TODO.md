@@ -174,9 +174,8 @@ Toolchain 1.99.1, edition 2024. Use:
 
 ## M1 — HTTP client (`src/client`)
 
-- [ ] Create a scratch database + token on the NAS server.
-  - 2026-10-30: scratch container from the live image (0.20.0, builtin MiniLM). Both contract suites passed against it, then it was removed. Full fixture re-capture on the NAS is scheduled right after the v0.2.0 release.
-  - Done in the meantime against a locally built `yantrikdb-server` 0.20.0 (scratch DB, bundled embedder): 71 fixtures in `tests/fixtures/`, API notes in `tests/fixtures/README.md`. Re-capture on the NAS to pin its exact version. Capture request/response fixtures for every v0.1 endpoint into `tests/fixtures/*.json`. Never capture from the real store. This repo is public.
+- [x] Create a scratch database + token on the NAS server.
+  - Fixtures re-captured on the NAS scratch build 2026-10-31 (0.20.0, builtin MiniLM); scratch container removed afterwards.
 - [x] Config resolution order: CLI flags > env > `~/.config/yrem/config.toml` (`$XDG_CONFIG_HOME` honored).
   - [x] `#[derive(Deserialize)] #[serde(deny_unknown_fields)]` so a typo in the file is an error, not a silent default.
 - [x] Optional `token_cmd` config key (e.g. `op read op://...`, `security find-generic-password -w ...`). Run it once with `std::process::Command` during config load, before any async work; its stdout is the token.

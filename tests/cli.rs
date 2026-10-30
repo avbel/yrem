@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use support::fake_server::{FakeServer, Step, TOKEN};
 
 const BIN: &str = env!("CARGO_BIN_EXE_yrem");
-const OLD_RID: &str = "01a18d82-690f-7a90-b75b-2331ceea45eb";
+const OLD_RID: &str = "01a18e8a-aa4d-786a-a95e-2944a7bb906a";
 const NEW_RID: &str = "01a18d90-0000-7000-8000-000000000001";
 
 struct Out {
@@ -142,7 +142,7 @@ fn remember() {
             "k1",
         ],
     );
-    assert_eq!(v["rid"], "01a18d82-690f-7a90-b75b-2331ceea45eb");
+    assert_eq!(v["rid"], "01a18e8a-aa4d-786a-a95e-2944a7bb906a");
     let b = &srv.requests()[0].body;
     assert_eq!(b["text"], "Payments service uses PostgreSQL");
     assert_eq!(b["memory_type"], "semantic");
@@ -213,10 +213,8 @@ fn recall() {
         hits[0]["created_at"].as_f64() >= hits[1]["created_at"].as_f64(),
         "recency order"
     );
-    assert_eq!(
-        hits[0]["score"].as_f64().map(|s| (s * 1e4).round()),
-        hits[0]["score"].as_f64().map(|s| s * 1e4)
-    );
+    let top = hits[0]["score"].as_f64().unwrap();
+    assert_eq!(top, (top * 1e4).round() / 1e4);
     let b = &srv.requests()[0].body;
     assert_eq!(b["query"], "which database?");
     assert_eq!(b["top_k"], 5);
@@ -505,7 +503,7 @@ fn session_start_and_end() {
         Step::post("/v1/sessions")
             .body(|b| b["namespace"] == "payments" && b["client_id"] == "cli")
             .fixture("session_start"),
-        Step::delete("/v1/sessions/01a18d83-61a3-7c63-9b60-158c6e776718")
+        Step::delete("/v1/sessions/01a18e8a-af32-70a3-b823-f881004b4a9d")
             .body(|b| b["summary"] == "done")
             .fixture("session_delete"),
     ]);
@@ -520,13 +518,13 @@ fn session_start_and_end() {
             "cli",
         ],
     ));
-    assert_eq!(v["session_id"], "01a18d83-61a3-7c63-9b60-158c6e776718");
+    assert_eq!(v["session_id"], "01a18e8a-af32-70a3-b823-f881004b4a9d");
     let v = ok(&yrem(
         &srv,
         &[
             "session",
             "end",
-            "01a18d83-61a3-7c63-9b60-158c6e776718",
+            "01a18e8a-af32-70a3-b823-f881004b4a9d",
             "--summary",
             "done",
         ],
@@ -948,7 +946,7 @@ fn temporal_as_of_usage_errors() {
 
 #[test]
 fn trigger_commands() {
-    let id = "01a18dce-949a-7135-a256-4e5ac3b57768";
+    let id = "01a18e8a-a8c7-7a8f-b1df-ff839152012f";
     let srv = FakeServer::start(vec![
         Step::get("/v1/triggers?limit=1").fixture("triggers_limit"),
         Step::get("/v1/triggers/history?limit=5&trigger_type=decay_review")

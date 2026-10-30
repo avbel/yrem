@@ -2,13 +2,13 @@
   "method": "POST",
   "path": "/v1/remember",
   "request": {
-    "text": "Carol is the on-call engineer this week",
-    "namespace": "payments",
     "domain": "work",
-    "idempotency_key": "demo-key-1"
+    "idempotency_key": "demo-key-1",
+    "namespace": "payments",
+    "text": "Carol is the on-call engineer this week"
   },
   "status": 200,
   "response": {
-    "rid": "01a18d82-6a3e-7143-ade1-6166a4507d72"
+    "rid": "01a18e8a-aa92-75f3-bf1f-9a1e0a2b4cfe"
   }
 }

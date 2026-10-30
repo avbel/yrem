@@ -2,13 +2,13 @@
   "method": "POST",
   "path": "/v1/recall",
   "request": {
-    "query": "payments",
-    "top_k": 3,
-    "memory_type": "semantic",
-    "include_consolidated": false,
-    "expand_entities": false,
     "certainty_min": 0.5,
-    "skip_reinforce": true
+    "expand_entities": false,
+    "include_consolidated": false,
+    "memory_type": "semantic",
+    "query": "payments",
+    "skip_reinforce": true,
+    "top_k": 3
   },
   "status": 200,
   "response": {
@@ -16,7 +16,7 @@
     "results": [
       {
         "certainty": 0.9,
-        "created_at": 1793375496.463076,
+        "created_at": 1793392814.669719,
         "domain": "work",
         "importance": 0.8,
         "memory_type": "semantic",
@@ -25,57 +25,55 @@
           "team": "payments"
         },
         "namespace": "payments",
-        "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb",
-        "score": 0.5041988894541896,
+        "rid": "01a18e8a-aa4d-786a-a95e-2944a7bb906a",
+        "score": 0.468316370004864,
         "source": "user",
         "text": "Payments service uses PostgreSQL",
         "valence": 0.1,
         "why_retrieved": [
-          "semantically similar (0.66)",
+          "semantically similar (0.54)",
           "recent",
           "important (decay=0.80)",
           "keyword_match",
-          "multi-lane agreement (2 lanes)",
-          "\u26a0 unresolved high conflict (preference) with 01a18d82-69fe-720b-8822-753be4726c9d \u2014 verify before relying"
+          "multi-lane agreement (2 lanes)"
         ]
       },
       {
         "certainty": 1.0,
-        "created_at": 1793375496.702969,
+        "created_at": 1793392814.869993,
         "domain": "work",
-        "importance": 0.5,
+        "importance": 0.7,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "payments",
-        "rid": "01a18d82-69fe-720b-8822-753be4726c9d",
-        "score": 0.45990435187878836,
+        "rid": "01a18e8a-ab15-7f0f-8047-e53e026b730c",
+        "score": 0.45955095341116364,
         "source": "user",
-        "text": "The payments service database is MySQL",
+        "text": "Alice leads the payments team",
         "valence": 0.0,
         "why_retrieved": [
-          "semantically similar (0.65)",
+          "semantically similar (0.59)",
           "recent",
-          "important (decay=0.50)",
+          "important (decay=0.70)",
           "keyword_match",
-          "multi-lane agreement (2 lanes)",
-          "\u26a0 unresolved high conflict (preference) with 01a18d82-690f-7a90-b75b-2331ceea45eb \u2014 verify before relying"
+          "multi-lane agreement (2 lanes)"
         ]
       },
       {
         "certainty": 1.0,
-        "created_at": 1793375496.549744,
+        "created_at": 1793392814.704828,
         "domain": "",
         "importance": 0.5,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "default",
-        "rid": "01a18d82-6965-7f1f-99b3-1e170db6afe8",
-        "score": 0.45518107719535233,
+        "rid": "01a18e8a-aa70-7182-9d04-5bb5dc14c9b1",
+        "score": 0.4557702439049758,
         "source": "user",
         "text": "Alice leads the payments team",
         "valence": 0.0,
         "why_retrieved": [
-          "semantically similar (0.56)",
+          "semantically similar (0.59)",
           "recent",
           "important (decay=0.50)",
           "keyword_match",

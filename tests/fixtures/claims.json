@@ -5,9 +5,9 @@
   "response": {
     "claims": [
       {
-        "claim_id": "01a18dcf-1ed2-7ef7-9ef2-124133e63777",
+        "claim_id": "01a18e8a-a9d9-79e4-b5ca-5c9293625c3a",
         "confidence_band": "high",
-        "created_at": 1793380523.730093,
+        "created_at": 1793392814.5533056,
         "dst": "Zephyr ledger migration",
         "extractor": "manual",
         "grounding": 0,
@@ -15,7 +15,7 @@
         "namespace": "ops",
         "polarity": 1,
         "rel_type": "reviews",
-        "source_memory_rid": "01a18dcf-1ebd-78ea-9981-9fabefe5fc93",
+        "source_memory_rid": "01a18e8a-a9c8-76c8-b686-f78277a7e8ce",
         "src": "Bob",
         "status_suggestion": "active",
         "valid_from": 1790000000.0,

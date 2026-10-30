@@ -10,22 +10,22 @@
         "acted_at": null,
         "context": {
           "current_score": 0.0,
-          "days_since_access": 90.0000004170835,
+          "days_since_access": 90.0000005070948,
           "original_importance": 0.9,
           "text": "Old retention policy note for the Zephyr archive",
           "type": "semantic",
           "valence": 0.0
         },
-        "created_at": 1793380488.345907,
+        "created_at": 1793392857.5721056,
         "delivered_at": null,
-        "expires_at": 1793985288.345907,
+        "expires_at": 1793997657.5721056,
         "reason": "Important memory (importance=0.9) has decayed to 0.000 after 90 days",
         "source_rids": [
-          "01a18dce-9493-7ab3-a1fb-9218c0ffec13"
+          "01a18e8b-51d7-751b-9639-a666e29d08e2"
         ],
         "status": "pending",
         "suggested_action": "ask_user_to_confirm_or_forget",
-        "trigger_id": "01a18dce-949a-7135-a256-4e5ac3b57768",
+        "trigger_id": "01a18e8b-51f0-75f4-b8db-f0f3bdb54ab5",
         "trigger_type": "decay_review",
         "urgency": 0.9
       }

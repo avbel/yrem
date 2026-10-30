@@ -2,23 +2,23 @@
   "method": "POST",
   "path": "/v1/remember",
   "request": {
-    "text": "Payments service uses PostgreSQL",
-    "memory_type": "semantic",
-    "importance": 0.8,
-    "valence": 0.1,
-    "domain": "work",
-    "source": "user",
-    "namespace": "payments",
     "certainty": 0.9,
+    "domain": "work",
     "emotional_state": "neutral",
+    "importance": 0.8,
+    "memory_type": "semantic",
     "metadata": {
-      "team": "payments",
-      "kind": "fact"
-    }
+      "kind": "fact",
+      "team": "payments"
+    },
+    "namespace": "payments",
+    "source": "user",
+    "text": "Payments service uses PostgreSQL",
+    "valence": 0.1
   },
   "status": 200,
   "response": {
-    "log_index": 1,
-    "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb"
+    "log_index": 6,
+    "rid": "01a18e8a-aa4d-786a-a95e-2944a7bb906a"
   }
 }

@@ -1,14 +1,14 @@
 {
   "method": "DELETE",
-  "path": "/v1/sessions/01a18d83-61a3-7c63-9b60-158c6e776718",
+  "path": "/v1/sessions/01a18e8a-af32-70a3-b823-f881004b4a9d",
   "request": {
     "summary": "Reviewed payments architecture"
   },
   "status": 200,
   "response": {
-    "duration_secs": 7.813354969024658,
+    "duration_secs": 3.156700372695923,
     "memory_count": 2,
-    "session_id": "01a18d83-61a3-7c63-9b60-158c6e776718",
+    "session_id": "01a18e8a-af32-70a3-b823-f881004b4a9d",
     "topics": [
       "Alice",
       "Payments",

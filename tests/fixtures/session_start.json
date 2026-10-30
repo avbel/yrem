@@ -2,14 +2,14 @@
   "method": "POST",
   "path": "/v1/sessions",
   "request": {
-    "namespace": "payments",
     "client_id": "fixture-client",
     "metadata": {
       "purpose": "demo"
-    }
+    },
+    "namespace": "payments"
   },
   "status": 200,
   "response": {
-    "session_id": "01a18d83-61a3-7c63-9b60-158c6e776718"
+    "session_id": "01a18e8a-af32-70a3-b823-f881004b4a9d"
   }
 }

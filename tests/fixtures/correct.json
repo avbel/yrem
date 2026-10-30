@@ -2,7 +2,7 @@
   "method": "POST",
   "path": "/v1/correct",
   "request": {
-    "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb",
+    "rid": "01a18e8a-aa4d-786a-a95e-2944a7bb906a",
     "text": "Payments service uses PostgreSQL 16"
   },
   "status": 501,

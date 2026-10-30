@@ -3,14 +3,14 @@
   "path": "/v1/relate",
   "request": {
     "entity": "Alice",
-    "target": "Payments",
+    "namespace": "payments",
     "relationship": "leads",
-    "weight": 0.9,
-    "namespace": "payments"
+    "target": "Payments",
+    "weight": 0.9
   },
   "status": 200,
   "response": {
-    "edge_id": "01a18d82-826c-7fb7-89b7-bef7fb9fae7e",
-    "log_index": 8
+    "edge_id": "01a18e8a-acaf-7562-8d51-018c4be483a6",
+    "log_index": 13
   }
 }

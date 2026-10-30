@@ -5,31 +5,49 @@
   "status": 200,
   "response": {
     "conflicts_found": 1,
-    "consolidation_count": 0,
-    "duration_ms": 3,
+    "consolidation_count": 2,
+    "duration_ms": 87,
     "patterns_new": 0,
     "patterns_updated": 0,
     "personality_updated": true,
     "triggers": [
       {
-        "reason": "Two memories are 100% similar and may be redundant (rid_a=01a18d82-69a8-74aa-9241-d965b4bd0b35, rid_b=01a18d82-6965-7f1f-99b3-1e170db6afe8): 'Alice leads the payments team' vs 'Alice leads the payments team'",
+        "reason": "Two memories are 100% similar and may be redundant (rid_a=01a18e8a-ab15-7f0f-8047-e53e026b730c, rid_b=01a18e8a-aa70-7182-9d04-5bb5dc14c9b1): 'Alice leads the payments team' vs 'Alice leads the payments team'",
         "source_rids": [
-          "01a18d82-69a8-74aa-9241-d965b4bd0b35",
-          "01a18d82-6965-7f1f-99b3-1e170db6afe8"
+          "01a18e8a-ab15-7f0f-8047-e53e026b730c",
+          "01a18e8a-aa70-7182-9d04-5bb5dc14c9b1"
         ],
         "suggested_action": "consolidate_or_forget",
         "trigger_type": "redundancy",
-        "urgency": 0.9999999999999999
+        "urgency": 1.0000000000000002
       },
       {
-        "reason": "databases substitution: 'mysql' vs 'postgresql' (similarity=76%, rid_a=01a18d82-69fe-720b-8822-753be4726c9d, rid_b=01a18d82-690f-7a90-b75b-2331ceea45eb)",
+        "reason": "Important memory (importance=0.9) has decayed to 0.000 after 90 days",
         "source_rids": [
-          "01a18d82-69fe-720b-8822-753be4726c9d",
-          "01a18d82-690f-7a90-b75b-2331ceea45eb"
+          "01a18e8a-a784-7b55-8dc0-ad155fa863b0"
+        ],
+        "suggested_action": "ask_user_to_confirm_or_forget",
+        "trigger_type": "decay_review",
+        "urgency": 0.9
+      },
+      {
+        "reason": "databases substitution: 'mysql' vs 'postgresql' (similarity=71%, rid_a=01a18e8a-ab55-779d-acc7-d117917fc6b8, rid_b=01a18e8a-aa4d-786a-a95e-2944a7bb906a)",
+        "source_rids": [
+          "01a18e8a-ab55-779d-acc7-d117917fc6b8",
+          "01a18e8a-aa4d-786a-a95e-2944a7bb906a"
         ],
         "suggested_action": "review_conflict",
         "trigger_type": "potential_conflict",
-        "urgency": 0.7603141678565447
+        "urgency": 0.7067929911230029
+      },
+      {
+        "reason": "Semantic memory is 90 days old and may be outdated",
+        "source_rids": [
+          "01a18e8a-a784-7b55-8dc0-ad155fa863b0"
+        ],
+        "suggested_action": "verify_or_update",
+        "trigger_type": "temporal_drift",
+        "urgency": 0.2465753878261204
       }
     ]
   }

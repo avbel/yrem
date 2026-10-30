@@ -1,12 +1,12 @@
 {
   "method": "DELETE",
-  "path": "/v1/sessions/01a18d83-8095-7b77-848c-dd171911c290",
+  "path": "/v1/sessions/01a18e8a-bb93-72c5-a575-0c0cf648e3c0",
   "request": null,
   "status": 200,
   "response": {
-    "duration_secs": 7.6851255893707275,
+    "duration_secs": 3.020899534225464,
     "memory_count": 0,
-    "session_id": "01a18d83-8095-7b77-848c-dd171911c290",
+    "session_id": "01a18e8a-bb93-72c5-a575-0c0cf648e3c0",
     "topics": []
   }
 }

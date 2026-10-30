@@ -11,14 +11,14 @@
     "results": [
       {
         "certainty": 1.0,
-        "created_at": 1793375496.616506,
+        "created_at": 1793392814.869993,
         "domain": "work",
         "importance": 0.7,
         "memory_type": "semantic",
         "metadata": {},
         "namespace": "payments",
-        "rid": "01a18d82-69a8-74aa-9241-d965b4bd0b35",
-        "score": 0.6389481771159501,
+        "rid": "01a18e8a-ab15-7f0f-8047-e53e026b730c",
+        "score": 0.63895161396085,
         "source": "user",
         "text": "Alice leads the payments team",
         "valence": 0.0,
@@ -31,49 +31,55 @@
         ]
       },
       {
-        "certainty": 0.7,
-        "created_at": 1793375567.7349017,
-        "domain": "work",
-        "importance": 0.5,
+        "certainty": 0.8,
+        "created_at": 1793392814.933114,
+        "domain": "general",
+        "importance": 0.8800000000000001,
         "memory_type": "semantic",
         "metadata": {
-          "kind": "session_auto_capture",
-          "provisional": true
+          "cluster_size": 2,
+          "consolidated_from": [
+            "01a18e8a-aa4d-786a-a95e-2944a7bb906a",
+            "01a18e8a-ab55-779d-acc7-d117917fc6b8"
+          ],
+          "consolidation_time": 1793392815.4150882,
+          "evidence_ids": [
+            "01a18e8a-aa4d-786a-a95e-2944a7bb906a",
+            "01a18e8a-ab55-779d-acc7-d117917fc6b8"
+          ],
+          "evidence_span_end_at": 1793392814.933114,
+          "first_mention_at": 1793392814.669719
         },
         "namespace": "payments",
-        "rid": "01a18d83-7f76-746d-8b30-b4eef168a9e6",
-        "score": 0.31400019921140365,
-        "source": "session_auto_capture",
-        "text": "We reviewed the payments service. Alice confirmed PostgreSQL is the primary database.",
-        "valence": 0.0,
+        "rid": "01a18e8a-ad37-739f-be01-476d4c11b70e",
+        "score": 0.25538082994382816,
+        "source": "user",
+        "text": "Payments service uses PostgreSQL | The payments service database is MySQL",
+        "valence": 0.05,
         "why_retrieved": [
-          "semantically similar (0.54)",
           "recent",
-          "important (decay=0.50)",
+          "important (decay=0.88)",
           "keyword_match",
           "graph-connected via PostgreSQL",
           "multi-lane agreement (3 lanes)"
         ]
       },
       {
-        "certainty": 0.9,
-        "created_at": 1793375496.463076,
+        "certainty": 1.0,
+        "created_at": 1793392814.869993,
         "domain": "work",
-        "importance": 0.8,
+        "importance": 0.5,
         "memory_type": "semantic",
-        "metadata": {
-          "kind": "fact",
-          "team": "payments"
-        },
+        "metadata": {},
         "namespace": "payments",
-        "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb",
-        "score": 0.20408009660881565,
+        "rid": "01a18e8a-ab19-707e-8f22-ebf601697aef",
+        "score": 0.2368631402689837,
         "source": "user",
-        "text": "Payments service uses PostgreSQL",
-        "valence": 0.1,
+        "text": "The payments service is deployed on Kubernetes",
+        "valence": 0.0,
         "why_retrieved": [
           "recent",
-          "important (decay=0.80)",
+          "important (decay=0.50)",
           "keyword_match",
           "multi-lane agreement (2 lanes)",
           "keyword_reserved"

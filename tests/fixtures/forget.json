@@ -2,14 +2,14 @@
   "method": "POST",
   "path": "/v1/forget",
   "request": {
-    "rid": "01a18d82-6965-7f1f-99b3-1e170db6afe8",
+    "namespace": "default",
     "reason": "duplicate of batch entry",
-    "namespace": "default"
+    "rid": "01a18e8a-aa70-7182-9d04-5bb5dc14c9b1"
   },
   "status": 200,
   "response": {
     "found": true,
-    "log_index": 11,
-    "rid": "01a18d82-6965-7f1f-99b3-1e170db6afe8"
+    "log_index": 15,
+    "rid": "01a18e8a-aa70-7182-9d04-5bb5dc14c9b1"
   }
 }

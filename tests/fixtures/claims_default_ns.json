@@ -5,9 +5,9 @@
   "response": {
     "claims": [
       {
-        "claim_id": "01a18dcf-1ed5-71ec-b8c5-a1b85ee461c3",
+        "claim_id": "01a18e8a-aa10-748b-ba10-716d32d96dea",
         "confidence_band": "medium",
-        "created_at": 1793380523.733702,
+        "created_at": 1793392814.6081023,
         "dst": "Zephyr budget",
         "extractor": "manual",
         "grounding": 0,
