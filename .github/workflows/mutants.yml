@@ -1,0 +1,37 @@
+name: Mutants
+
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants@27.1.0
+      # Surviving mutants in ops, error, mcp and time get an issue each (filed manually).
+      - name: Run cargo-mutants
+        run: >
+          cargo mutants --in-place --no-shuffle
+          -f 'src/ops/**' -f src/error.rs -f 'src/mcp/**' -f src/time.rs
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: mutants-out
+          path: mutants.out
+          if-no-files-found: warn

@@ -1,0 +1,53 @@
+[package]
+name = "yrem"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+description = "Remote-only CLI and MCP server for yantrikdb-server"
+repository = "https://github.com/avbel/yrem"
+readme = "README.md"
+keywords = ["mcp", "yantrikdb", "agent-memory", "cli"]
+categories = ["command-line-utilities"]
+
+[features]
+default = []
+tls = ["reqwest/rustls"]   # rustls + aws-lc-rs; plain HTTP is enough on LAN
+
+[dependencies]
+rmcp = { version = "3.8.0", features = ["transport-io"] }   # defaults: server, macros, base64
+tokio = { version = "1.54.1", features = ["rt", "macros"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
+schemars = "1.2.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+toml = "1.1.8"
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "env-filter", "std"] }
+
+[dev-dependencies]
+rmcp = { version = "3.8.0", features = ["client", "transport-child-process"] }
+tokio = { version = "1.54.1", features = ["rt", "macros", "net", "io-util", "time", "process"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "warn"
+print_stdout = "warn"   # stdout belongs to JSON-RPC / CLI output; write through `output` only
+missing_errors_doc = "allow"   # every op returns `yrem::Error`; documented once on the enum
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "s"
