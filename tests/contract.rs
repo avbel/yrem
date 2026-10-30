@@ -1,6 +1,6 @@
 //! Contract tests against a real `yantrikdb-server`. Skipped unless `YREM_CONTRACT=1`;
 //! needs `YREM_URL` and `YREM_TOKEN` for a scratch database (never the real store).
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::too_many_lines)]
 
 use serde_json::{Value, json};
 use yrem::Error;

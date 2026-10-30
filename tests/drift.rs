@@ -94,7 +94,7 @@ fn every_mcp_tool_has_a_cli_leaf() {
             Some((group, leaf))
                 if cmd
                     .find_subcommand(group)
-                    .is_some_and(|g| g.has_subcommands()) =>
+                    .is_some_and(clap::Command::has_subcommands) =>
             {
                 vec![group, leaf]
             }

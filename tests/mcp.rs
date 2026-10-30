@@ -205,7 +205,7 @@ async fn every_tool_success_and_error() {
         assert!(ok.structured_content.is_none(), "{tool}");
         let err = c.call_tool(params(tool, args.clone())).await.unwrap();
         assert_eq!(err.is_error, Some(true), "{tool}: {}", text(&err));
-        assert!(!text(&err).is_empty());
+        assert_ne!(text(&err), "");
     }
     srv.assert_done();
     c.cancel().await.unwrap();
@@ -465,6 +465,6 @@ async fn missing_config_fails_fast() {
         .await
         .unwrap();
     assert!(!out.status.success());
-    assert!(out.stdout.is_empty());
+    assert_eq!(out.stdout, b"");
     assert!(String::from_utf8_lossy(&out.stderr).contains("no server URL"));
 }

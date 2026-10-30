@@ -1,6 +1,14 @@
 //! Scripted fake `yantrikdb-server`: a queue of expected requests and canned answers.
 //! Every request is recorded so tests can assert which calls happened.
-#![allow(dead_code, unreachable_pub, clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::needless_pass_by_value
+)]
+
+type BodyMatcher = Arc<dyn Fn(&Value) -> bool + Send + Sync>;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -22,7 +30,7 @@ pub struct Step {
     /// Expected `Authorization` header value; `None` skips the check.
     pub auth: Option<String>,
     /// Body predicate.
-    pub body: Option<Arc<dyn Fn(&Value) -> bool + Send + Sync>>,
+    pub body: Option<BodyMatcher>,
     pub status: u16,
     pub response: String,
     pub delay: Option<Duration>,
@@ -58,13 +66,16 @@ impl Step {
         self
     }
     pub fn raw(mut self, s: &str) -> Self {
-        self.response = s.to_owned();
+        s.clone_into(&mut self.response);
         self
     }
     /// Answers with the `response` of `tests/fixtures/<name>.json`.
     pub fn fixture(mut self, name: &str) -> Self {
         let f = fixture(name);
-        self.status = f["status"].as_u64().map_or(200, |s| s as u16);
+        self.status = f["status"]
+            .as_u64()
+            .and_then(|s| u16::try_from(s).ok())
+            .unwrap_or(200);
         self.response = match &f["response"] {
             Value::String(s) => s.clone(),
             v => v.to_string(),

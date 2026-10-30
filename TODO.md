@@ -46,7 +46,7 @@ Public repo: `github.com/avbel/yrem`. License: MIT.
   - chrono (already in the tree via rmcp → schemars, so it replaces jiff)
 - [x] `correct`: native-first, emulated on 501. Try `POST /v1/correct`; when the server answers 501, emulate it as get → remember → forget (see M2). The revision chain is lost while emulating; README documents this.
 - [x] MCP tools are flat: one tool per CLI leaf command (`graph relate` ↔ `graph_relate`). No `action`-tagged enums: they generate a top-level `oneOf`, which several clients and model APIs reject or handle poorly, and it costs more tokens.
-- [ ] MCP tool set v0.1 (13):
+- [x] MCP tool set v0.1 (12; `graph_edges` demoted, see below):
   - `remember`, `recall`, `forget`, `correct`, `think`
   - `graph_relate`, `graph_edges`
   - `conflict_list`, `conflict_resolve`
@@ -54,8 +54,10 @@ Public repo: `github.com/avbel/yrem`. License: MIT.
   - `memory_get`, `memory_current`
 
   CLI-only: `conflict dismiss`, `session start|end`, `memory list|gaps|stats`, `call`, `doctor`, `mcp`. If `tools/list` exceeds 2k tokens, demote tools to CLI-only.
-- [ ] Config env names: `YREM_URL` / `YREM_TOKEN`, with fallback to `YANTRIKDB_SERVER_URL` / `YANTRIKDB_TOKEN` for drop-in replacement.
-- [ ] Logging: rmcp already emits `tracing` events (tracing is in the tree). Add `tracing-subscriber` (fmt to stderr, `RUST_LOG` filter) to surface protocol logs, or keep `eprintln!` for our own diagnostics only. Recommendation: add it; debugging MCP handshakes without it is blind.
+  - `graph_edges` is CLI-only: `yantrikdb-server` 0.20 has no HTTP edge query (`POST /v1/graph` → 404, verified against a real server), so as an MCP tool it would always fail. `yrem graph edges` reports `Unsupported` (exit 4); move it back to MCP when the server serves edges.
+  - Measured: `tools/list` ≈ 1.6k tokens, instructions ≈ 145 tokens (golden test `tests/golden/tools_list.json`).
+- [x] Config env names: `YREM_URL` / `YREM_TOKEN`, with fallback to `YANTRIKDB_SERVER_URL` / `YANTRIKDB_TOKEN` for drop-in replacement.
+- [x] Logging: rmcp already emits `tracing` events (tracing is in the tree). Add `tracing-subscriber` (fmt to stderr, `RUST_LOG` filter) to surface protocol logs, or keep `eprintln!` for our own diagnostics only. Recommendation: add it; debugging MCP handshakes without it is blind.
 
 ## Concurrency model
 
@@ -91,13 +93,13 @@ Toolchain 1.99.1, edition 2024. Use:
 
 ## M0 — Scaffold
 
-- [ ] `rust-toolchain.toml`:
+- [x] `rust-toolchain.toml`:
   ```toml
   [toolchain]
   channel = "1.99.1"
   components = ["rustfmt", "clippy", "llvm-tools-preview"]
   ```
-- [ ] `Cargo.toml`:
+- [x] `Cargo.toml`:
   ```toml
   [package]
   name = "yrem"
@@ -152,62 +154,63 @@ Toolchain 1.99.1, edition 2024. Use:
   ```
   - `schemars` 1.x unifies with rmcp's `schemars ^1.0`, so there is one version in the tree.
   - `chrono` unifies with the copy schemars already pulls (`chrono04`).
-- [ ] Modules: `client` (HTTP), `ops` (argument structs + operations), `mcp` (rmcp handler), `cli` (clap tree), `config`, `time`, `error`, `output`. `src/main.rs` stays a thin call into `yrem::run() -> ExitCode`.
-- [ ] Repo files:
+- [x] Modules: `client` (HTTP), `ops` (argument structs + operations), `mcp` (rmcp handler), `cli` (clap tree), `config`, `time`, `error`, `output`. `src/main.rs` stays a thin call into `yrem::run() -> ExitCode`.
+- [x] Repo files:
   - [x] `LICENSE` (MIT)
   - [x] `NOTICE`: credits yantrikdb-mcp (MIT) for the adapted MCP instructions
   - [x] `README.md`
-  - [ ] `SECURITY.md`
-  - [ ] `.gitignore` including `config.toml` and `*.token`
+  - [x] `SECURITY.md`
+  - [x] `.gitignore` including `config.toml` and `*.token`
 - [ ] GitHub settings: secret scanning + push protection, Dependabot alerts, branch protection on `main` (CI required).
-- [ ] CI (ubuntu + macos), each in both `--features tls` and plain variants:
-  - [ ] `fmt --check`
-  - [ ] `clippy --all-targets`
-  - [ ] `test`
-  - [ ] coverage gate (M6)
-  - [ ] `cargo-deny` 0.20.2: advisories; licenses allow-list compatible with MIT distribution; duplicate versions as warnings
-- [ ] Dependabot for `cargo` and `github-actions`, weekly. Bump `rust-toolchain.toml` by hand on each Rust release (next: 1.100.0).
-- [ ] Commit `Cargo.lock`.
+- [x] CI (ubuntu + macos), each in both `--features tls` and plain variants:
+  - [x] `fmt --check`
+  - [x] `clippy --all-targets`
+  - [x] `test`
+  - [x] coverage gate (M6)
+  - [x] `cargo-deny` 0.20.2: advisories; licenses allow-list compatible with MIT distribution; duplicate versions as warnings
+- [x] Dependabot for `cargo` and `github-actions`, weekly. Bump `rust-toolchain.toml` by hand on each Rust release (next: 1.100.0).
+- [x] Commit `Cargo.lock`.
 
 ## M1 — HTTP client (`src/client`)
 
-- [ ] Create a scratch database + token on the NAS server. Capture request/response fixtures for every v0.1 endpoint into `tests/fixtures/*.json`. Never capture from the real store. This repo is public.
-- [ ] Config resolution order: CLI flags > env > `~/.config/yrem/config.toml` (`$XDG_CONFIG_HOME` honored).
-  - [ ] `#[derive(Deserialize)] #[serde(deny_unknown_fields)]` so a typo in the file is an error, not a silent default.
-- [ ] Optional `token_cmd` config key (e.g. `op read op://...`, `security find-generic-password -w ...`). Run it once with `std::process::Command` during config load, before any async work; its stdout is the token.
-- [ ] `reqwest::Client`:
-  - [ ] `connect_timeout(3s)`, `timeout(15s)`
-  - [ ] `user_agent("yrem/<version>")`
-  - [ ] default `Authorization: Bearer` header with `HeaderValue::set_sensitive(true)`, so it never shows up in `Debug` output
-- [ ] Error enum (`thiserror`), mapped from HTTP status:
-  - [ ] 401/403 → `Auth`
-  - [ ] 404 → `NotFound`
-  - [ ] 429 → `Quota`
-  - [ ] 501 with `error = "not_yet_available_over_http"` → `Unsupported { operation, reason }`
-  - [ ] 503 → `Unavailable` (read-only node / no leader)
-  - [ ] anything else → `Http { status, body }`
-  - [ ] `reqwest::Error` → `Transport` (`#[from]`); timeouts become `Unavailable`
-  - [ ] invalid JSON → `Decode`
-  - [ ] `Error::exit_code()` and `Error::is_retryable()`
-- [ ] Typed request structs. Lenient response structs: `#[serde(default)]` on fields plus `#[serde(flatten)] extra: Map<String, Value>`, so server additions don't break decoding.
-- [ ] Endpoints v0.1:
-  - [ ] `GET /v1/health`, `GET /v1/health/deep`, `GET /v1/stats`
-  - [ ] `POST /v1/remember`, `POST /v1/remember/batch`, `POST /v1/recall`, `POST /v1/forget`, `POST /v1/correct`, `POST /v1/think`
-  - [ ] `POST /v1/relate`, `POST /v1/graph` (`action: query`)
-  - [ ] `GET /v1/conflicts`, `POST /v1/conflicts/{id}/resolve`
-  - [ ] `GET /v1/session/digest`, `POST /v1/session/end` (summary capture), `POST /v1/sessions`, `DELETE /v1/sessions/{id}`
-  - [ ] `GET /v1/memory/{rid}`, `GET /v1/memories`, `GET /v1/current?namespace=`
-  - [ ] `GET /v1/insights/gaps`
+- [ ] Create a scratch database + token on the NAS server.
+  - Done in the meantime against a locally built `yantrikdb-server` 0.20.0 (scratch DB, bundled embedder): 71 fixtures in `tests/fixtures/`, API notes in `tests/fixtures/README.md`. Re-capture on the NAS to pin its exact version. Capture request/response fixtures for every v0.1 endpoint into `tests/fixtures/*.json`. Never capture from the real store. This repo is public.
+- [x] Config resolution order: CLI flags > env > `~/.config/yrem/config.toml` (`$XDG_CONFIG_HOME` honored).
+  - [x] `#[derive(Deserialize)] #[serde(deny_unknown_fields)]` so a typo in the file is an error, not a silent default.
+- [x] Optional `token_cmd` config key (e.g. `op read op://...`, `security find-generic-password -w ...`). Run it once with `std::process::Command` during config load, before any async work; its stdout is the token.
+- [x] `reqwest::Client`:
+  - [x] `connect_timeout(3s)`, `timeout(15s)`
+  - [x] `user_agent("yrem/<version>")`
+  - [x] default `Authorization: Bearer` header with `HeaderValue::set_sensitive(true)`, so it never shows up in `Debug` output
+- [x] Error enum (`thiserror`), mapped from HTTP status:
+  - [x] 401/403 → `Auth`
+  - [x] 404 → `NotFound`
+  - [x] 429 → `Quota`
+  - [x] 501 with `error = "not_yet_available_over_http"` → `Unsupported { operation, reason }`
+  - [x] 503 → `Unavailable` (read-only node / no leader)
+  - [x] anything else → `Http { status, body }`
+  - [x] `reqwest::Error` → `Transport` (`#[from]`); timeouts become `Unavailable`
+  - [x] invalid JSON → `Decode`
+  - [x] `Error::exit_code()` and `Error::is_retryable()`
+- [x] Typed request structs. Lenient response structs: `#[serde(default)]` on fields plus `#[serde(flatten)] extra: Map<String, Value>`, so server additions don't break decoding.
+- [x] Endpoints v0.1:
+  - [x] `GET /v1/health`, `GET /v1/health/deep`, `GET /v1/stats`
+  - [x] `POST /v1/remember`, `POST /v1/remember/batch`, `POST /v1/recall`, `POST /v1/forget`, `POST /v1/correct`, `POST /v1/think`
+  - [x] `POST /v1/relate`, `POST /v1/graph` (`action: query`)
+  - [x] `GET /v1/conflicts`, `POST /v1/conflicts/{id}/resolve`
+  - [x] `GET /v1/session/digest`, `POST /v1/session/end` (summary capture), `POST /v1/sessions`, `DELETE /v1/sessions/{id}`
+  - [x] `GET /v1/memory/{rid}`, `GET /v1/memories`, `GET /v1/current?namespace=`
+  - [x] `GET /v1/insights/gaps`
 - [ ] Endpoints v0.2:
   - [ ] `GET /v1/temporal/stale`, `GET /v1/temporal/upcoming`, `POST /v1/temporal/as_of`
   - [ ] `GET /v1/triggers`, `GET /v1/triggers/history`, `POST /v1/triggers/{id}/{action}`
   - [ ] `POST /v1/claim`, `GET /v1/claims`
   - [ ] `POST /v1/procedures/surface`, `GET /v1/tasks`
-- [ ] Unavailable server-side (501), do not wrap: task add/update/delete, procedure learn/reinforce, category learn/reset.
+- [x] Unavailable server-side (501), do not wrap: task add/update/delete, procedure learn/reinforce, category learn/reset.
 
 ## M2 — Ops layer (`src/ops`)
 
-- [ ] One argument struct per leaf operation:
+- [x] One argument struct per leaf operation:
   ```rust
   #[derive(Debug, clap::Args, serde::Deserialize, schemars::JsonSchema)]
   #[serde(deny_unknown_fields)]
@@ -215,24 +218,25 @@ Toolchain 1.99.1, edition 2024. Use:
   - Doc comments are both the `--help` text and the schema `description`.
   - Use `#[schemars(range(min = 0.0, max = 1.0))]` where the model benefits from bounds.
   - Each derive ignores the other derives' attributes, so `#[arg(…)]`, `#[serde(…)]` and `#[schemars(…)]` coexist on one field.
-- [ ] CLI-only fields (e.g. `--stdin`) carry `#[serde(skip)] #[schemars(skip)]`. MCP-only fields (e.g. `remember.memories` for batch) carry `#[arg(skip)]` and are reachable from the CLI via `yrem call`.
-- [ ] One `async fn` per operation on `App`, taking the args struct and returning `Result<serde_json::Value, yrem::Error>`. MCP and CLI both call these; neither contains logic.
-- [ ] Port validation from yantrikdb-mcp `tools.py`:
-  - [ ] clamp `importance` / `certainty` to 0..1 and `valence` to -1..1
-  - [ ] `memory_type` as a `ValueEnum` + `JsonSchema` enum: semantic | episodic | procedural
-  - [ ] non-empty `text`
-- [ ] `src/time` (chrono):
-  - [ ] accepted inputs: RFC 3339 with offset, `YYYY-MM-DD`, unix seconds, relative spans (`7d`, `12h`, `30m`)
-  - [ ] the relative-span parser is ~20 lines, table-tested
-  - [ ] `since` / `until` become `time_window`
-- [ ] `recall` behaviour:
-  - [ ] post-filter results by `time_window` (the server may ignore it)
-  - [ ] `min_score_ratio`
-  - [ ] `order` (`ValueEnum`): relevance | recency | certainty | first_mention
-  - [ ] `refine_exclude` filtered client-side, all via `extract_if`
-- [ ] `remember`: single (`text`) or batch (`memories`, MCP / `yrem call`). Refuse `created_at`, `idempotency_key` and `claims` with an explicit error until the server accepts them; never drop them silently.
-- [ ] `session_capture`: summary text → `/v1/session/end`; the server splits it into atomic facts.
-- [ ] `correct` (args: `rid`, `reason` required, `new_text?`, `new_importance?`, `new_valence?`, `metadata_merge?`):
+- [x] CLI-only fields (e.g. `--stdin`) carry `#[serde(skip)] #[schemars(skip)]`. MCP-only fields (e.g. `remember.memories` for batch) carry `#[arg(skip)]` and are reachable from the CLI via `yrem call`.
+- [x] One `async fn` per operation on `App`, taking the args struct and returning `Result<serde_json::Value, yrem::Error>`. MCP and CLI both call these; neither contains logic.
+- [x] Port validation from yantrikdb-mcp `tools.py`:
+  - [x] clamp `importance` / `certainty` to 0..1 and `valence` to -1..1
+  - [x] `memory_type` as a `ValueEnum` + `JsonSchema` enum: semantic | episodic | procedural
+  - [x] non-empty `text`
+- [x] `src/time` (chrono):
+  - [x] accepted inputs: RFC 3339 with offset, `YYYY-MM-DD`, unix seconds, relative spans (`7d`, `12h`, `30m`)
+  - [x] the relative-span parser is ~20 lines, table-tested
+  - [x] `since` / `until` become `time_window`
+- [x] `recall` behaviour:
+  - [x] post-filter results by `time_window` (the server may ignore it)
+  - [x] `min_score_ratio`
+  - [x] `order` (`ValueEnum`): relevance | recency | certainty | first_mention
+  - [x] `refine_exclude` filtered client-side, all via `extract_if`
+- [x] `remember`: single (`text`) or batch (`memories`, MCP / `yrem call`). Refuse `created_at`, `idempotency_key` and `claims` with an explicit error until the server accepts them; never drop them silently.
+  - Server 0.20 accepts `created_at` (unix secs) and `idempotency_key` on `/v1/remember`, so both are passed through. `claims` is not a field: `deny_unknown_fields` rejects it.
+- [x] `session_capture`: summary text → `/v1/session/end`; the server splits it into atomic facts.
+- [x] `correct` (args: `rid`, `reason` required, `new_text?`, `new_importance?`, `new_valence?`, `metadata_merge?`):
   1. `POST /v1/correct`. On 2xx, return the native result with `"emulated": false`.
   2. On `Unsupported` (501), `GET /v1/memory/{rid}`. On 404, return a `NotFound` error; nothing has been written.
   3. Build the replacement record:
@@ -243,25 +247,25 @@ Toolchain 1.99.1, edition 2024. Use:
   4. `POST /v1/remember` first. If it fails, return the error and leave the old record untouched: a duplicate is recoverable, a loss is not.
   5. `POST /v1/forget` the old rid. If that fails, return `Error::PartialCorrect { old_rid, new_rid }`, which tells the agent to retry `forget(old_rid)`.
   6. Success result: `{"old_rid", "new_rid", "emulated": true}`.
-  - [ ] Note in the tool description that the new memory's `created_at` is now, not the original date.
-- [ ] Output shaping: ISO UTC timestamp plus unix, scores rounded to 4 dp, nulls pruned, compact JSON.
+  - [x] Note in the tool description that the new memory's `created_at` is now, not the original date.
+- [x] Output shaping: ISO UTC timestamp plus unix, scores rounded to 4 dp, nulls pruned, compact JSON.
 
 ## M3 — MCP (`yrem mcp`, rmcp)
 
-- [ ] `struct Server { app: Arc<App> }` with `#[tool_router]`; one `#[tool]` per MCP tool taking `Parameters<Args>`.
-- [ ] Annotations on every tool:
+- [x] `struct Server { app: Arc<App> }` with `#[tool_router]`; one `#[tool]` per MCP tool taking `Parameters<Args>`.
+- [x] Annotations on every tool:
   - `read_only_hint` on recall / get / list / digest
   - `destructive_hint` on forget / correct / conflict_resolve
   - `idempotent_hint` where true
   - `open_world_hint = false` everywhere
-- [ ] `#[tool_handler]` + `ServerHandler::get_info`: server name/version, tools capability, `instructions`.
-- [ ] Serve: `Server::new(app).serve(rmcp::transport::stdio()).await?.waiting().await?`. rmcp negotiates both spec eras: the 2025-11-25 `initialize` flow and 2026-07-28 stateless `server/discover`.
-- [ ] Tool results:
-  - [ ] success → `CallToolResult::success(vec![ContentBlock::text(compact_json)])`. No `structuredContent`; it would duplicate the tokens.
-  - [ ] `yrem::Error` → `CallToolResult::error(…)` with actionable text (operation name for 501, both rids for `PartialCorrect`)
-  - [ ] `ErrorData` only for protocol-level failures
-- [ ] Cancellation: every tool body runs through `cancellable(&ctx.ct, async || …)`.
-- [ ] Tool descriptions: one line each, ≤ 15 words, saying when to use the tool. Canonical text:
+- [x] `#[tool_handler]` + `ServerHandler::get_info`: server name/version, tools capability, `instructions`.
+- [x] Serve: `Server::new(app).serve(rmcp::transport::stdio()).await?.waiting().await?`. rmcp negotiates both spec eras: the 2025-11-25 `initialize` flow and 2026-07-28 stateless `server/discover`.
+- [x] Tool results:
+  - [x] success → `CallToolResult::success(vec![ContentBlock::text(compact_json)])`. No `structuredContent`; it would duplicate the tokens.
+  - [x] `yrem::Error` → `CallToolResult::error(…)` with actionable text (operation name for 501, both rids for `PartialCorrect`)
+  - [x] `ErrorData` only for protocol-level failures
+- [x] Cancellation: every tool body runs through `cancellable(&ctx.ct, async || …)`.
+- [x] Tool descriptions: one line each, ≤ 15 words, saying when to use the tool. Canonical text:
 
   | Tool | Description |
   |---|---|
@@ -279,26 +283,26 @@ Toolchain 1.99.1, edition 2024. Use:
   | `memory_get` | Fetch one memory by rid. |
   | `memory_current` | Latest value of a fact that changes over time. |
 
-- [ ] Arg doc comments: ≤ 8 words, only where the name isn't self-explanatory (e.g. `importance`: "Higher decays slower."). No description on `rid`, `query`, `text`, `namespace`, `top_k`.
-- [ ] Schema budget:
-  - [ ] golden-file test of `tools/list` + instructions, asserting instructions ≤ 150 tokens and `tools/list` ≤ 2,000 tokens (chars / 4)
-  - [ ] use `#[tool(input_schema = compact_schema::<T>())]` from the start: generate with schemars, strip `$schema`, `title` and integer `format`s; keep `description`, `enum`, `minimum` / `maximum`, `required`
+- [x] Arg doc comments: ≤ 8 words, only where the name isn't self-explanatory (e.g. `importance`: "Higher decays slower."). No description on `rid`, `query`, `text`, `namespace`, `top_k`.
+- [x] Schema budget:
+  - [x] golden-file test of `tools/list` + instructions, asserting instructions ≤ 150 tokens and `tools/list` ≤ 2,000 tokens (chars / 4)
+  - [x] use `#[tool(input_schema = compact_schema::<T>())]` from the start: generate with schemars, strip `$schema`, `title` and integer `format`s; keep `description`, `enum`, `minimum` / `maximum`, `required`
 - [x] Instructions: `src/mcp/instructions.md` (~145 tokens), loaded with `include_str!`. It condenses the upstream golden path (~950 tokens) to 8 lines: digest → recall, remember, correct, memory_current, think, what not to store, and the trust boundary.
 - [ ] Run the official MCP conformance suite against `yrem mcp` in CI.
 
 ## M4 — CLI (`yrem <command>`, clap)
 
-- [ ] clap tree:
+- [x] clap tree:
   - plain: `remember`, `recall`, `forget`, `correct`, `think`
   - grouped: `graph {relate,edges}`, `conflict {list,resolve,dismiss}`, `session {digest,capture,start,end}`, `memory {get,current,list,gaps,stats}`
   - other: `call`, `doctor`, `mcp`
   - alias: `digest` = `session digest`
-- [ ] Leaf commands embed the shared args struct via `#[command(flatten)]`. Global flags: `--url` (`env = "YREM_URL"`), `--token` (`env = "YREM_TOKEN"`, `hide_env_values = true`), `--config` (`env = "YREM_CONFIG"`), `--pretty`, `--compact`.
-- [ ] Positional fields: `remember` → `text`, `recall` → `query`, `forget` / `correct` / `memory get` → `rid`, `conflict resolve|dismiss` → `id`, `session capture` → `summary`, `session end` → `session_id`.
-- [ ] `--stdin` reads the positional text from stdin (`remember`, `recall`, `session capture`).
-- [ ] `yrem call <mcp_tool> [JSON]`: deserialize JSON (argument or stdin) into that tool's args struct and run it. Covers MCP-only fields (batch `memories`, `metadata_merge` objects).
-- [ ] Output: JSON on stdout. Pretty on a TTY, compact when piped; `--pretty` / `--compact` override.
-- [ ] Exit codes:
+- [x] Leaf commands embed the shared args struct via `#[command(flatten)]`. Global flags: `--url` (`env = "YREM_URL"`), `--token` (`env = "YREM_TOKEN"`, `hide_env_values = true`), `--config` (`env = "YREM_CONFIG"`), `--pretty`, `--compact`.
+- [x] Positional fields: `remember` → `text`, `recall` → `query`, `forget` / `correct` / `memory get` → `rid`, `conflict resolve|dismiss` → `id`, `session capture` → `summary`, `session end` → `session_id`.
+- [x] `--stdin` reads the positional text from stdin (`remember`, `recall`, `session capture`).
+- [x] `yrem call <mcp_tool> [JSON]`: deserialize JSON (argument or stdin) into that tool's args struct and run it. Covers MCP-only fields (batch `memories`, `metadata_merge` objects).
+- [x] Output: JSON on stdout. Pretty on a TTY, compact when piped; `--pretty` / `--compact` override.
+- [x] Exit codes:
   - 0 ok
   - 1 other
   - 2 usage (clap's default)
@@ -306,8 +310,8 @@ Toolchain 1.99.1, edition 2024. Use:
   - 4 unsupported (501)
   - 5 unavailable/timeout
   - 6 partial correct
-- [ ] `yrem digest --hook`: print `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"..."}}`. Truncate the context to stay under Claude Code's 10k-char hook output cap. If the server is unreachable or auth fails, print nothing, write the reason to stderr and exit 0, so a session never fails to start because of memory.
-- [ ] `yrem doctor`: print resolved config (token redacted), connectivity, auth, server version from `/v1/health/deep`, and the list of operations the server answers 501 for.
+- [x] `yrem digest --hook`: print `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"..."}}`. Truncate the context to stay under Claude Code's 10k-char hook output cap. If the server is unreachable or auth fails, print nothing, write the reason to stderr and exit 0, so a session never fails to start because of memory.
+- [x] `yrem doctor`: print resolved config (token redacted), connectivity, auth, server version from `/v1/health/deep`, and the list of operations the server answers 501 for.
 
 ## M5 — Integration
 
@@ -325,23 +329,23 @@ Rule: every module ships with its tests in the same PR. A PR that lowers coverag
   - [ ] lcov artifact + a per-file table in the job summary. No third-party coverage service.
   - [ ] Ratchet the floor up as coverage grows; never down.
 - [ ] **Mutation testing:** cargo-mutants 27.1.0, weekly scheduled job. Surviving mutants in `ops`, `error`, `mcp` and `time` get an issue each. Target: zero survivors in those modules.
-- [ ] **Test support:**
-  - [ ] `tests/support/fake_server.rs`: a `tokio::net::TcpListener` task with a scripted queue of (expected method, path, auth, body matcher) → (status, fixture, optional delay) pairs. It records every request so tests can assert which calls happened and which did not.
-  - [ ] Golden files with a `YREM_BLESS=1` regenerate switch.
-- [ ] **client:**
-  - [ ] status → error table test (401, 403, 404, 429, 501 with and without `operation`, 503, 500, connection refused, timeout, invalid JSON)
-  - [ ] lenient decode with unknown fields
-  - [ ] auth header sensitive and present
-  - [ ] user agent
-- [ ] **config:** precedence matrix (flag / env / fallback env / file / `token_cmd`); unknown keys rejected; missing config; `token_cmd` failure and non-UTF-8 output.
-- [ ] **time:** table-driven tests: RFC 3339 with offsets, date-only, unix, `7d` / `12h` / `30m`, invalid inputs, `since > until`.
+- [x] **Test support:**
+  - [x] `tests/support/fake_server.rs`: a `tokio::net::TcpListener` task with a scripted queue of (expected method, path, auth, body matcher) → (status, fixture, optional delay) pairs. It records every request so tests can assert which calls happened and which did not.
+  - [x] Golden files with a `YREM_BLESS=1` regenerate switch.
+- [x] **client:**
+  - [x] status → error table test (401, 403, 404, 429, 501 with and without `operation`, 503, 500, connection refused, timeout, invalid JSON)
+  - [x] lenient decode with unknown fields
+  - [x] auth header sensitive and present
+  - [x] user agent
+- [x] **config:** precedence matrix (flag / env / fallback env / file / `token_cmd`); unknown keys rejected; missing config; `token_cmd` failure and non-UTF-8 output.
+- [x] **time:** table-driven tests: RFC 3339 with offsets, date-only, unix, `7d` / `12h` / `30m`, invalid inputs, `since > until`.
 - [ ] **ops (every operation):**
   - [ ] happy path against fixtures
   - [ ] every validation error
   - [ ] output shaping (rounding, ISO, null pruning)
-- [ ] **schema/args drift:** for every args struct, assert:
-  - [ ] the schemars schema's properties = the serde field names = the clap arg ids (minus the documented CLI-only / MCP-only fields)
-  - [ ] `clap::Command::debug_assert()` passes
+- [x] **schema/args drift:** for every args struct, assert:
+  - [x] the schemars schema's properties = the serde field names = the clap arg ids (minus the documented CLI-only / MCP-only fields)
+  - [x] `clap::Command::debug_assert()` passes
 - [ ] **recall:** each filter (`time_window`, `min_score_ratio`, `order`, `refine_exclude`) with its `filtered_by_*` count.
 - [ ] **correct:** one test per path:
   - [ ] native 2xx
@@ -349,13 +353,13 @@ Rule: every module ships with its tests in the same PR. A PR that lowers coverag
   - [ ] GET 404: assert no remember or forget was sent
   - [ ] remember fails: assert no forget was sent
   - [ ] forget fails: `PartialCorrect` with both rids, exit code 6
-- [ ] **mcp** (rmcp client over `TokioChildProcess` spawning `yrem mcp`):
-  - [ ] `tools/list` golden + token budgets (instructions ≤ 150, `tools/list` ≤ 2,000)
-  - [ ] each tool's success and `isError` paths
-  - [ ] cancellation aborts the in-flight HTTP request (fake server delay + assert the connection was dropped)
-  - [ ] concurrent calls
-  - [ ] both protocol eras (`initialize` flow and `server/discover` flow)
-  - [ ] stdout carries only JSON-RPC frames
+- [x] **mcp** (rmcp client over `TokioChildProcess` spawning `yrem mcp`):
+  - [x] `tools/list` golden + token budgets (instructions ≤ 150, `tools/list` ≤ 2,000)
+  - [x] each tool's success and `isError` paths
+  - [x] cancellation aborts the in-flight HTTP request (fake server delay + assert the connection was dropped)
+  - [x] concurrent calls
+  - [x] both protocol eras (`initialize` flow and `server/discover` flow)
+  - [x] stdout carries only JSON-RPC frames
 - [ ] **cli:**
   - [ ] every command against the fake server via `std::process::Command` on `env!("CARGO_BIN_EXE_yrem")`
   - [ ] `--stdin`, `yrem call`
