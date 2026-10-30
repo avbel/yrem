@@ -1,0 +1,13 @@
+{
+  "method": "POST",
+  "path": "/v1/forget",
+  "request": {
+    "rid": "does-not-exist"
+  },
+  "status": 200,
+  "response": {
+    "found": true,
+    "log_index": 12,
+    "rid": "does-not-exist"
+  }
+}

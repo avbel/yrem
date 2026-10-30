@@ -1,0 +1,36 @@
+{
+  "method": "POST",
+  "path": "/v1/think",
+  "request": {},
+  "status": 200,
+  "response": {
+    "conflicts_found": 1,
+    "consolidation_count": 0,
+    "duration_ms": 3,
+    "patterns_new": 0,
+    "patterns_updated": 0,
+    "personality_updated": true,
+    "triggers": [
+      {
+        "reason": "Two memories are 100% similar and may be redundant (rid_a=01a18d82-69a8-74aa-9241-d965b4bd0b35, rid_b=01a18d82-6965-7f1f-99b3-1e170db6afe8): 'Alice leads the payments team' vs 'Alice leads the payments team'",
+        "source_rids": [
+          "01a18d82-69a8-74aa-9241-d965b4bd0b35",
+          "01a18d82-6965-7f1f-99b3-1e170db6afe8"
+        ],
+        "suggested_action": "consolidate_or_forget",
+        "trigger_type": "redundancy",
+        "urgency": 0.9999999999999999
+      },
+      {
+        "reason": "databases substitution: 'mysql' vs 'postgresql' (similarity=76%, rid_a=01a18d82-69fe-720b-8822-753be4726c9d, rid_b=01a18d82-690f-7a90-b75b-2331ceea45eb)",
+        "source_rids": [
+          "01a18d82-69fe-720b-8822-753be4726c9d",
+          "01a18d82-690f-7a90-b75b-2331ceea45eb"
+        ],
+        "suggested_action": "review_conflict",
+        "trigger_type": "potential_conflict",
+        "urgency": 0.7603141678565447
+      }
+    ]
+  }
+}

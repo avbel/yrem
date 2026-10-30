@@ -1,0 +1,67 @@
+{
+  "method": "GET",
+  "path": "/v1/session/digest",
+  "request": null,
+  "status": 200,
+  "response": {
+    "last_maintenance": null,
+    "narrative_head": null,
+    "open_conflict_count": 0,
+    "open_conflicts": [],
+    "pending_trigger_count": 5,
+    "pending_triggers": [
+      {
+        "reason": "Two memories are 100% similar and may be redundant (rid_a=01a18d82-69a8-74aa-9241-d965b4bd0b35, rid_b=01a18d82-6965-7f1f-99b3-1e170db6afe8): 'Alice leads the payments team' vs 'Alice leads the payments team'",
+        "trigger_id": "01a18d82-83dd-76c3-840a-c88ffa104308",
+        "trigger_type": "redundancy",
+        "urgency": 0.9999999999999999
+      },
+      {
+        "reason": "databases substitution: 'mysql' vs 'postgresql' (similarity=76%, rid_a=01a18d82-69fe-720b-8822-753be4726c9d, rid_b=01a18d82-690f-7a90-b75b-2331ceea45eb)",
+        "trigger_id": "01a18d82-83de-74b8-85d4-61b690be348d",
+        "trigger_type": "potential_conflict",
+        "urgency": 0.7603141678565447
+      },
+      {
+        "reason": "New pattern discovered: Cross-domain connection between work and  (sim=0.78, surprise=0.89)",
+        "trigger_id": "01a18d82-842e-7b7e-bcd0-7c7e63ae6730",
+        "trigger_type": "surprise_connection",
+        "urgency": 0.5568857953772711
+      },
+      {
+        "reason": "New pattern discovered: Cross-domain connection between work and  (sim=0.69, surprise=0.89)",
+        "trigger_id": "01a18d82-842e-7b7e-bcd0-7c80a898816e",
+        "trigger_type": "surprise_connection",
+        "urgency": 0.5
+      },
+      {
+        "reason": "New pattern discovered: Cross-domain connection between work and  (sim=0.64, surprise=0.89)",
+        "trigger_id": "01a18d82-842e-7b7e-bcd0-7c829990c09d",
+        "trigger_type": "surprise_connection",
+        "urgency": 0.5
+      }
+    ],
+    "top_decisions": [
+      {
+        "created_at": 1793375496.463076,
+        "current_status": "active",
+        "disputed": false,
+        "importance": 0.8,
+        "namespace": "payments",
+        "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb",
+        "snippet": "Payments service uses PostgreSQL",
+        "superseded_by": null
+      },
+      {
+        "created_at": 1793375496.616506,
+        "current_status": "active",
+        "disputed": false,
+        "importance": 0.7,
+        "namespace": "payments",
+        "rid": "01a18d82-69a8-74aa-9241-d965b4bd0b35",
+        "snippet": "Alice leads the payments team",
+        "superseded_by": null
+      }
+    ]
+  }
+}

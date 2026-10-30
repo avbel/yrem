@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "path": "/v1/graph?entity=Alice",
+  "request": null,
+  "status": 404,
+  "response": ""
+}

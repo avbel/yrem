@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/recall",
+  "request": {
+    "top_k": 3
+  },
+  "status": 400,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing 'query'"
+    }
+  }
+}

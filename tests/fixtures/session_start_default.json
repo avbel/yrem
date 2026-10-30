@@ -1,0 +1,9 @@
+{
+  "method": "POST",
+  "path": "/v1/sessions",
+  "request": {},
+  "status": 200,
+  "response": {
+    "session_id": "01a18d83-8095-7b77-848c-dd171911c290"
+  }
+}

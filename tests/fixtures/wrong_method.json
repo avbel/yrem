@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "path": "/v1/remember",
+  "request": null,
+  "status": 405,
+  "response": ""
+}

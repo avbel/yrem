@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "path": "/v1/remember",
+  "request": {
+    "text": "Alice leads the payments team"
+  },
+  "status": 200,
+  "response": {
+    "log_index": 2,
+    "rid": "01a18d82-6965-7f1f-99b3-1e170db6afe8"
+  }
+}

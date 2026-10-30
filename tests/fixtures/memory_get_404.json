@@ -1,0 +1,12 @@
+{
+  "method": "GET",
+  "path": "/v1/memory/does-not-exist",
+  "request": null,
+  "status": 404,
+  "response": {
+    "error": {
+      "code": "memory_not_found",
+      "message": "memory not found: does-not-exist"
+    }
+  }
+}

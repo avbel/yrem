@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/recall",
+  "request": {
+    "query": "x",
+    "top_k": 5000
+  },
+  "status": 400,
+  "response": {
+    "error": "top_k exceeds hard cap; reduce top_k or use the v2 scan endpoint when available",
+    "hard_top_k_cap": 1000,
+    "reason": "top_k_cap"
+  }
+}

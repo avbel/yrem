@@ -1,0 +1,7 @@
+{
+  "method": "POST",
+  "path": "/v1/think",
+  "request": null,
+  "status": 415,
+  "response": "Expected request with `Content-Type: application/json`"
+}

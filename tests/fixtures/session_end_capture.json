@@ -1,0 +1,17 @@
+{
+  "method": "POST",
+  "path": "/v1/session/end",
+  "request": {
+    "summary": "We reviewed the payments service. Alice confirmed PostgreSQL is the primary database. Nightly reconciliation runs at 02:00 UTC. Carol is on call this week.",
+    "namespace": "payments",
+    "domain": "work"
+  },
+  "status": 200,
+  "response": {
+    "count": 2,
+    "drafted": [
+      "01a18d83-7f76-746d-8b30-b4eef168a9e6",
+      "01a18d83-7f78-7167-8d43-36ff06969687"
+    ]
+  }
+}

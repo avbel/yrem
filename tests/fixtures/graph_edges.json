@@ -1,0 +1,10 @@
+{
+  "method": "POST",
+  "path": "/v1/graph",
+  "request": {
+    "action": "query",
+    "entity": "Alice"
+  },
+  "status": 404,
+  "response": ""
+}

@@ -16,9 +16,9 @@ pub use schema::{compact, compact_schema};
 
 use crate::error::Result;
 use crate::ops::{
-    App, ConflictListArgs, ConflictResolveArgs, CorrectArgs, ForgetArgs, GraphEdgesArgs,
-    GraphRelateArgs, MemoryCurrentArgs, MemoryGetArgs, RecallArgs, RememberArgs,
-    SessionCaptureArgs, SessionDigestArgs, ThinkArgs,
+    App, ConflictListArgs, ConflictResolveArgs, CorrectArgs, ForgetArgs, GraphRelateArgs,
+    MemoryCurrentArgs, MemoryGetArgs, RecallArgs, RememberArgs, SessionCaptureArgs,
+    SessionDigestArgs, ThinkArgs,
 };
 
 /// MCP server instructions (~145 tokens).
@@ -116,7 +116,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Replace a stored fact that changed. New record links the old rid; its created_at is now.",
+        description = "Replace a changed fact. New record links the old rid; created_at becomes now.",
         input_schema = compact_schema::<CorrectArgs>(),
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false)
     )]
@@ -152,19 +152,6 @@ impl Server {
         ctx: RequestContext<RoleServer>,
     ) -> ToolResult {
         cancellable(&ctx, async || self.app.graph_relate(a).await).await
-    }
-
-    #[tool(
-        description = "List an entity's relations.",
-        input_schema = compact_schema::<GraphEdgesArgs>(),
-        annotations(read_only_hint = true, open_world_hint = false)
-    )]
-    async fn graph_edges(
-        &self,
-        Parameters(a): Parameters<GraphEdgesArgs>,
-        ctx: RequestContext<RoleServer>,
-    ) -> ToolResult {
-        cancellable(&ctx, async || self.app.graph_edges(a).await).await
     }
 
     #[tool(

@@ -1,0 +1,15 @@
+{
+  "method": "POST",
+  "path": "/v1/forget",
+  "request": {
+    "rid": "01a18d82-6965-7f1f-99b3-1e170db6afe8",
+    "reason": "duplicate of batch entry",
+    "namespace": "default"
+  },
+  "status": 200,
+  "response": {
+    "found": true,
+    "log_index": 11,
+    "rid": "01a18d82-6965-7f1f-99b3-1e170db6afe8"
+  }
+}

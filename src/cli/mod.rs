@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::Context;
-use clap::{Args, Parser, Subcommand};
+use clap::parser::ValueSource;
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use serde_json::{Value, json};
 
 use crate::client::Client;
@@ -155,8 +156,14 @@ pub struct CallArgs {
 
 /// Parses the command line and runs it.
 pub async fn run() -> ExitCode {
-    let cli = Cli::parse();
-    match execute(cli).await {
+    let matches = Cli::command().get_matches();
+    let from_env = |id: &str| matches.value_source(id) == Some(ValueSource::EnvVariable);
+    let (url_from_env, token_from_env) = (from_env("url"), from_env("token"));
+    let cli = match Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli,
+        Err(e) => e.exit(),
+    };
+    match execute(cli, url_from_env, token_from_env).await {
         Ok(code) => code,
         Err(e) => report(&e),
     }
@@ -176,12 +183,14 @@ fn report(e: &anyhow::Error) -> ExitCode {
     }
 }
 
-async fn execute(cli: Cli) -> anyhow::Result<ExitCode> {
+async fn execute(cli: Cli, url_from_env: bool, token_from_env: bool) -> anyhow::Result<ExitCode> {
     let format = Format::detect(cli.global.pretty, cli.global.compact);
     let overrides = Overrides {
         url: cli.global.url,
         token: cli.global.token,
         config: cli.global.config,
+        url_from_env,
+        token_from_env,
     };
     if let Command::Digest(d) | Command::Session(SessionCommand::Digest(d)) = &cli.command
         && d.hook

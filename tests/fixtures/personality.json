@@ -1,0 +1,26 @@
+{
+  "method": "GET",
+  "path": "/v1/personality",
+  "request": null,
+  "status": 200,
+  "response": {
+    "traits": [
+      {
+        "name": "attentiveness",
+        "score": 0.263
+      },
+      {
+        "name": "depth",
+        "score": 0.411
+      },
+      {
+        "name": "energy",
+        "score": 0.19142857142857145
+      },
+      {
+        "name": "warmth",
+        "score": 0.50625
+      }
+    ]
+  }
+}

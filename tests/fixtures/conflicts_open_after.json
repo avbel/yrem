@@ -1,0 +1,9 @@
+{
+  "method": "GET",
+  "path": "/v1/conflicts?status=open",
+  "request": null,
+  "status": 200,
+  "response": {
+    "conflicts": []
+  }
+}

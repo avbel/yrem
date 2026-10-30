@@ -1,0 +1,12 @@
+{
+  "method": "GET",
+  "path": "/v1/memories?q=foo",
+  "request": null,
+  "status": 400,
+  "response": {
+    "error": {
+      "code": "invalid_query_parameter",
+      "message": "text search filter `q` is not implemented on /v1/memories in Phase 1; use /v1/recall for semantic search"
+    }
+  }
+}

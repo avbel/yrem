@@ -1,0 +1,23 @@
+{
+  "method": "GET",
+  "path": "/v1/current?namespace=payments",
+  "request": null,
+  "status": 200,
+  "response": {
+    "found": true,
+    "namespace": "payments",
+    "record": {
+      "certainty": 1.0,
+      "created_at": 1793375496.7665448,
+      "created_at_iso": "2026-10-30T15:51:36Z",
+      "domain": "work",
+      "importance": 0.5,
+      "memory_type": "semantic",
+      "metadata": {},
+      "namespace": "payments",
+      "rid": "01a18d82-6a3e-7143-ade1-6166a4507d72",
+      "source": "user",
+      "text": "Carol is the on-call engineer this week"
+    }
+  }
+}

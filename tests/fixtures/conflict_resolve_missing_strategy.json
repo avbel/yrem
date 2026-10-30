@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "path": "/v1/conflicts/01a18d82-83dc-7e2d-b7c2-f390a01a2994/resolve",
+  "request": {},
+  "status": 400,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing 'strategy'"
+    }
+  }
+}

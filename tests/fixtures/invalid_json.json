@@ -1,0 +1,7 @@
+{
+  "method": "POST",
+  "path": "/v1/remember",
+  "request": "not json",
+  "status": 400,
+  "response": "Failed to parse the request body as JSON: expected ident at line 1 column 2"
+}

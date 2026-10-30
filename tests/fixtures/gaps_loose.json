@@ -1,0 +1,19 @@
+{
+  "method": "GET",
+  "path": "/v1/insights/gaps?min_count=1&max_avg_top_score=1.0&limit=5",
+  "request": null,
+  "status": 200,
+  "response": {
+    "count": 1,
+    "gaps": [
+      {
+        "avg_results": 8.0,
+        "avg_top_score": 0.5227601661197839,
+        "count": 1,
+        "last_seen": 1793375515.8662271,
+        "last_seen_iso": "2026-10-30T15:51:55Z",
+        "query": "who leads payments"
+      }
+    ]
+  }
+}

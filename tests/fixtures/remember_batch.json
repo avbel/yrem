@@ -1,0 +1,41 @@
+{
+  "method": "POST",
+  "path": "/v1/remember/batch",
+  "request": {
+    "memories": [
+      {
+        "text": "Alice leads the payments team",
+        "namespace": "payments",
+        "domain": "work",
+        "importance": 0.7
+      },
+      {
+        "text": "The payments service is deployed on Kubernetes",
+        "namespace": "payments",
+        "domain": "work"
+      },
+      {
+        "text": "Bob maintains the billing dashboard",
+        "namespace": "billing",
+        "domain": "work",
+        "memory_type": "episodic"
+      },
+      {
+        "text": "The payments service runs nightly reconciliation at 02:00 UTC",
+        "namespace": "payments",
+        "domain": "work"
+      }
+    ]
+  },
+  "status": 200,
+  "response": {
+    "count": 4,
+    "log_index": 6,
+    "rids": [
+      "01a18d82-69a8-74aa-9241-d965b4bd0b35",
+      "01a18d82-69a9-78d9-b7d8-b1e3e2f25d4e",
+      "01a18d82-69aa-7981-b441-9dd3cf7af190",
+      "01a18d82-69ab-747e-8067-7394116d942b"
+    ]
+  }
+}

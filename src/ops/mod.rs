@@ -20,14 +20,16 @@ use crate::output::shape;
 use crate::time::{self, TimeWindow};
 
 /// MCP tool names, in `tools/list` order. Each has a CLI counterpart.
-pub const TOOLS: [&str; 13] = [
+///
+/// `graph_edges` is CLI-only: `yantrikdb-server` 0.20 has no HTTP edge query, and an MCP
+/// tool that always fails costs tokens and misleads agents.
+pub const TOOLS: [&str; 12] = [
     "remember",
     "recall",
     "forget",
     "correct",
     "think",
     "graph_relate",
-    "graph_edges",
     "conflict_list",
     "conflict_resolve",
     "session_digest",
@@ -157,7 +159,8 @@ impl App {
         if let Some(w) = window {
             count(
                 "filtered_by_time_window",
-                hits.extract_if(.., |h| !w.contains(h.created_at)).count(),
+                hits.extract_if(.., |h| !h.created_at.is_some_and(|t| w.contains(t)))
+                    .count(),
             );
         }
         if let Some(exclude) = &args.refine_exclude {
@@ -169,20 +172,26 @@ impl App {
             );
         }
         if let Some(ratio) = args.min_score_ratio
-            && let Some(top) = hits.iter().map(|h| h.score).reduce(f64::max)
+            && let Some(top) = hits.iter().filter_map(|h| h.score).reduce(f64::max)
         {
             count(
                 "filtered_by_min_score_ratio",
-                hits.extract_if(.., |h| h.score < ratio * top).count(),
+                hits.extract_if(.., |h| h.score.unwrap_or(0.0) < ratio * top)
+                    .count(),
             );
         }
+        let key = |v: Option<f64>| v.unwrap_or(f64::NEG_INFINITY);
         match args.order {
             None | Some(Order::Relevance) => {}
-            Some(Order::Recency) => hits.sort_by(|a, b| b.created_at.total_cmp(&a.created_at)),
-            Some(Order::FirstMention) => {
-                hits.sort_by(|a, b| a.created_at.total_cmp(&b.created_at));
+            Some(Order::Recency) => {
+                hits.sort_by(|a, b| key(b.created_at).total_cmp(&key(a.created_at)));
             }
-            Some(Order::Certainty) => hits.sort_by(|a, b| b.certainty.total_cmp(&a.certainty)),
+            Some(Order::FirstMention) => {
+                hits.sort_by(|a, b| key(a.created_at).total_cmp(&key(b.created_at)));
+            }
+            Some(Order::Certainty) => {
+                hits.sort_by(|a, b| key(b.certainty).total_cmp(&key(a.certainty)));
+            }
         }
         let mut out = serde_json::to_value(&resp).map_err(|e| Error::Decode(e.to_string()))?;
         if let Value::Object(o) = &mut out {
@@ -402,7 +411,7 @@ impl App {
             domain: args.domain,
             memory_type: args.memory_type.map(|t| t.as_str().to_owned()),
             source: None,
-            q: args.q,
+            q: None,
             limit: args.limit,
             offset: args.offset,
             order: args.desc.then(|| "desc".to_owned()),

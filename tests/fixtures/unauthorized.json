@@ -1,0 +1,13 @@
+{
+  "method": "GET",
+  "path": "/v1/stats",
+  "request": null,
+  "status": 401,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing Bearer token"
+    }
+  },
+  "auth": "none"
+}

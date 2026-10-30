@@ -45,14 +45,21 @@ pub fn render(digest: &Value, limit: usize) -> String {
     if out.len() <= limit {
         return out;
     }
-    // Escaping can grow the text, so shrink until the envelope fits.
-    let mut budget = full.len().saturating_sub(out.len() - limit);
-    loop {
-        let cut = full.floor_char_boundary(budget.saturating_sub(MARKER.len()));
-        let out = envelope(&format!("{}{MARKER}", &full[..cut]));
-        if out.len() <= limit || cut == 0 {
-            return out;
+    // Escaping grows the text unevenly, so binary-search the longest prefix that fits.
+    let truncated = |cut: usize| {
+        envelope(&format!(
+            "{}{MARKER}",
+            &full[..full.floor_char_boundary(cut)]
+        ))
+    };
+    let (mut lo, mut hi) = (0, full.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if truncated(mid).len() <= limit {
+            lo = mid;
+        } else {
+            hi = mid - 1;
         }
-        budget = cut.saturating_sub(out.len() - limit);
     }
+    truncated(lo)
 }

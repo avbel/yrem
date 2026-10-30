@@ -1,0 +1,41 @@
+{
+  "method": "GET",
+  "path": "/v1/memory/01a18d82-690f-7a90-b75b-2331ceea45eb",
+  "request": null,
+  "status": 200,
+  "response": {
+    "access_count": 2,
+    "certainty": 0.9,
+    "claims": [],
+    "consolidated_into": null,
+    "consolidation_sources": [],
+    "consolidation_status": "active",
+    "created_at": 1793375496.463076,
+    "created_at_iso": "2026-10-30T15:51:36Z",
+    "domain": "work",
+    "due_at": null,
+    "embedding_bytes": null,
+    "embedding_model": null,
+    "emotional_state": "neutral",
+    "entities": [],
+    "half_life": 241.92,
+    "importance": 0.8,
+    "last_access": 1793375515.8631737,
+    "metadata_json": {
+      "kind": "fact",
+      "team": "payments"
+    },
+    "namespace": "payments",
+    "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb",
+    "session_id": null,
+    "source": "user",
+    "storage_tier": "hot",
+    "temporal_kind": null,
+    "text": "Payments service uses PostgreSQL",
+    "tombstone_reason": null,
+    "type": "semantic",
+    "updated_at": null,
+    "updated_at_iso": null,
+    "valence": 0.1
+  }
+}

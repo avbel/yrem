@@ -5,7 +5,7 @@ Remote-only client for [`yantrikdb-server`](https://github.com/yantrikos/yantrik
 - No engine, no embedder, no Python. The server does the embedding.
 - Built on [rmcp](https://github.com/modelcontextprotocol/rust-sdk) (the official Rust MCP SDK), tokio, reqwest and clap.
 - One Rust struct per operation generates the CLI flags, the `--help` text and the MCP JSON Schema, so the CLI and MCP can't drift apart.
-- Compact agent context: 13 MCP tools in ≤ 2k tokens plus ~150 tokens of instructions. `yantrikdb-mcp` ships 21 tools (≈ 14k tokens) plus ~950 tokens of instructions, and most of those tools fail against a remote server.
+- Compact agent context: 12 MCP tools in ≤ 2k tokens plus ~150 tokens of instructions. `yantrikdb-mcp` ships 21 tools (≈ 14k tokens) plus ~950 tokens of instructions, and most of those tools fail against a remote server.
 
 > **Status: pre-release.** This README describes the target interface. Progress is tracked in [TODO.md](TODO.md).
 
@@ -219,7 +219,6 @@ MCP tools are flat, one per CLI command. Argument names are identical: `top_k` i
 | `correct` | `yrem correct` | `/v1/correct`, emulated on 501 |
 | `think` | `yrem think` | `/v1/think` |
 | `graph_relate` | `yrem graph relate` | `/v1/relate` |
-| `graph_edges` | `yrem graph edges` | `/v1/graph` |
 | `conflict_list` | `yrem conflict list` | `GET /v1/conflicts` |
 | `conflict_resolve` | `yrem conflict resolve` | `POST /v1/conflicts/{id}/resolve` |
 | `session_digest` | `yrem session digest`, `yrem digest` | `/v1/session/digest` |
@@ -231,6 +230,7 @@ CLI-only commands:
 
 | CLI | Purpose |
 |---|---|
+| `yrem graph edges` | An entity's relations (`POST /v1/graph`). `yantrikdb-server` 0.20 has no HTTP edge query, so this exits 4 there; it is CLI-only until the server serves it |
 | `yrem conflict dismiss` | Resolve with strategy `dismiss` |
 | `yrem session start` / `end` | Session tracking (`/v1/sessions`) |
 | `yrem memory list` / `gaps` / `stats` | Listing, knowledge gaps, store statistics |

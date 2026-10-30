@@ -1,0 +1,12 @@
+{
+  "method": "GET",
+  "path": "/v1/current?namespace=emptychain",
+  "request": null,
+  "status": 404,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "no chain head for namespace 'emptychain'"
+    }
+  }
+}

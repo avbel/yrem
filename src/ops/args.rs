@@ -311,9 +311,6 @@ pub struct MemoryListArgs {
     pub domain: Option<String>,
     #[arg(long, value_enum)]
     pub memory_type: Option<MemoryType>,
-    /// Text filter.
-    #[arg(long)]
-    pub q: Option<String>,
     #[arg(long)]
     pub limit: Option<u32>,
     #[arg(long)]

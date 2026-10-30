@@ -1,4 +1,4 @@
-//! Configuration: CLI flags > environment > config file.
+//! Configuration: CLI flags > environment (`YREM_*`, then `YANTRIKDB_*`) > config file.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -21,6 +21,9 @@ pub struct Overrides {
     pub url: Option<String>,
     pub token: Option<String>,
     pub config: Option<PathBuf>,
+    /// `url` / `token` came from `YREM_URL` / `YREM_TOKEN` rather than a flag (for `doctor`).
+    pub url_from_env: bool,
+    pub token_from_env: bool,
 }
 
 /// Where a resolved value came from, for `doctor`.
@@ -74,8 +77,12 @@ impl Config {
         env: impl Fn(&str) -> Option<String>,
     ) -> anyhow::Result<Self> {
         let non_empty = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
-        let (path, explicit) = match &overrides.config {
-            Some(p) => (Some(p.clone()), true),
+        let (path, explicit) = match overrides
+            .config
+            .clone()
+            .or_else(|| non_empty(env("YREM_CONFIG")).map(PathBuf::from))
+        {
+            Some(p) => (Some(p), true),
             None => (default_path(&env), false),
         };
         let file = match &path {
@@ -85,9 +92,12 @@ impl Config {
         let loaded = file.is_some();
         let file = file.unwrap_or_default();
 
+        let flag_or_env = |from_env| if from_env { Origin::Env } else { Origin::Flag };
         let (url, url_origin) = if let Some(u) = non_empty(overrides.url.clone()) {
-            (u, Origin::Flag)
-        } else if let Some(u) = non_empty(env("YANTRIKDB_SERVER_URL")) {
+            (u, flag_or_env(overrides.url_from_env))
+        } else if let Some(u) =
+            non_empty(env("YREM_URL")).or_else(|| non_empty(env("YANTRIKDB_SERVER_URL")))
+        {
             (u, Origin::Env)
         } else if let Some(u) = non_empty(file.url) {
             (u, Origin::File)
@@ -96,8 +106,10 @@ impl Config {
         };
 
         let (token, token_origin) = if let Some(t) = non_empty(overrides.token.clone()) {
-            (Some(t), Origin::Flag)
-        } else if let Some(t) = non_empty(env("YANTRIKDB_TOKEN")) {
+            (Some(t), flag_or_env(overrides.token_from_env))
+        } else if let Some(t) =
+            non_empty(env("YREM_TOKEN")).or_else(|| non_empty(env("YANTRIKDB_TOKEN")))
+        {
             (Some(t), Origin::Env)
         } else if let Some(t) = non_empty(file.token) {
             (Some(t), Origin::File)

@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/recall",
+  "request": {
+    "query": "zebra migration schedule",
+    "namespace": "nonexistent"
+  },
+  "status": 200,
+  "response": {
+    "fallback": null,
+    "results": [],
+    "total": 0
+  }
+}

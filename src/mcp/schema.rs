@@ -37,7 +37,9 @@ pub fn compact(v: &mut Value) {
                     o.insert("type".into(), kept[0].clone());
                 }
             }
-            if o.get("type").is_some_and(|t| t == "integer" || t == "number") {
+            if o.get("type")
+                .is_some_and(|t| t == "integer" || t == "number")
+            {
                 o.remove("format");
             }
             // anyOf [{$ref}, {type: null}] -> {$ref}

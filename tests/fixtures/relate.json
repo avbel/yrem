@@ -1,0 +1,16 @@
+{
+  "method": "POST",
+  "path": "/v1/relate",
+  "request": {
+    "entity": "Alice",
+    "target": "Payments",
+    "relationship": "leads",
+    "weight": 0.9,
+    "namespace": "payments"
+  },
+  "status": 200,
+  "response": {
+    "edge_id": "01a18d82-826c-7fb7-89b7-bef7fb9fae7e",
+    "log_index": 8
+  }
+}

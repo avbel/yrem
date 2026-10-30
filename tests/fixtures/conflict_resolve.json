@@ -1,0 +1,13 @@
+{
+  "method": "POST",
+  "path": "/v1/conflicts/01a18d82-83dc-7e2d-b7c2-f390a01a2994/resolve",
+  "request": {
+    "strategy": "keep_b",
+    "resolution_note": "PostgreSQL confirmed by the platform team"
+  },
+  "status": 200,
+  "response": {
+    "conflict_id": "01a18d82-83dc-7e2d-b7c2-f390a01a2994",
+    "strategy": "keep_b"
+  }
+}

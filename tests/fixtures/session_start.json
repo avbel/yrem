@@ -1,0 +1,15 @@
+{
+  "method": "POST",
+  "path": "/v1/sessions",
+  "request": {
+    "namespace": "payments",
+    "client_id": "fixture-client",
+    "metadata": {
+      "purpose": "demo"
+    }
+  },
+  "status": 200,
+  "response": {
+    "session_id": "01a18d83-61a3-7c63-9b60-158c6e776718"
+  }
+}

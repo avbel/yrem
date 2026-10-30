@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "path": "/v1/forget",
+  "request": {},
+  "status": 400,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing 'rid'"
+    }
+  }
+}

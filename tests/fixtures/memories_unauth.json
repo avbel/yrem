@@ -1,0 +1,13 @@
+{
+  "method": "GET",
+  "path": "/v1/memories",
+  "request": null,
+  "status": 401,
+  "response": {
+    "error": {
+      "code": "unauthenticated",
+      "message": "missing Bearer token"
+    }
+  },
+  "auth": "none"
+}

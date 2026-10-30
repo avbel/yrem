@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/relate",
+  "request": {
+    "entity": "Alice"
+  },
+  "status": 400,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing 'target'"
+    }
+  }
+}

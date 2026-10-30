@@ -1,0 +1,86 @@
+{
+  "method": "GET",
+  "path": "/v1/health/deep",
+  "request": null,
+  "status": 200,
+  "response": {
+    "admission": {
+      "expanded_recall": {
+        "in_use": 0,
+        "max": 4
+      },
+      "hard_top_k_cap": 1000,
+      "in_flight_recall": {
+        "in_use": 0,
+        "max": 64
+      },
+      "max_request_body_bytes": 65536
+    },
+    "checks": [
+      {
+        "check": "engine_lock",
+        "latency_ms": 0.189945,
+        "pass": true
+      },
+      {
+        "check": "control_db",
+        "databases": 2,
+        "latency_ms": 0.044419,
+        "pass": true
+      }
+    ],
+    "encryption": {
+      "algorithm": null,
+      "enabled": false
+    },
+    "runtime": {
+      "control_runtime_isolated": false
+    },
+    "status": "healthy",
+    "version": {
+      "build_id": "0.20.0",
+      "min_supported_wire": {
+        "major": 1,
+        "minor": 0
+      },
+      "table_schema_versions": [
+        [
+          "memory_commit_log",
+          1
+        ],
+        [
+          "quota_policies",
+          1
+        ],
+        [
+          "quota_audit_log",
+          1
+        ],
+        [
+          "memory_tombstones",
+          1
+        ],
+        [
+          "hnsw_manifests",
+          1
+        ],
+        [
+          "backup_manifests",
+          1
+        ],
+        [
+          "durable_jobs",
+          1
+        ],
+        [
+          "tenant_config_overrides",
+          1
+        ]
+      ],
+      "wire": {
+        "major": 1,
+        "minor": 2
+      }
+    }
+  }
+}

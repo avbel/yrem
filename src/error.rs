@@ -15,7 +15,7 @@ pub enum Error {
     #[error("quota exceeded: {0}")]
     Quota(String),
     /// 501: the server has no HTTP path for this operation.
-    #[error("server does not support `{operation}` over HTTP (501): {reason}")]
+    #[error("server does not support `{operation}` over HTTP: {reason}")]
     Unsupported { operation: String, reason: String },
     /// 503, timeouts and unreachable servers.
     #[error("server unavailable: {0}")]

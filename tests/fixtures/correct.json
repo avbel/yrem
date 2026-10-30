@@ -1,0 +1,15 @@
+{
+  "method": "POST",
+  "path": "/v1/correct",
+  "request": {
+    "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb",
+    "text": "Payments service uses PostgreSQL 16"
+  },
+  "status": 501,
+  "response": {
+    "deferred": true,
+    "error": "not_yet_available_over_http",
+    "operation": "correct",
+    "reason": "This is a cluster-global write with no replication path yet; exposing it as a direct engine call would silently diverge across the cluster. Available in embedded (single-node) mode; replicated HTTP support is tracked in RFC 032."
+  }
+}

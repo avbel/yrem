@@ -1,0 +1,52 @@
+{
+  "method": "POST",
+  "path": "/v1/think",
+  "request": {
+    "run_consolidation": true,
+    "run_conflict_scan": true,
+    "run_pattern_mining": true,
+    "run_personality": true,
+    "consolidation_limit": 50
+  },
+  "status": 200,
+  "response": {
+    "conflicts_found": 0,
+    "consolidation_count": 0,
+    "duration_ms": 5,
+    "patterns_new": 3,
+    "patterns_updated": 0,
+    "personality_updated": true,
+    "triggers": [
+      {
+        "reason": "New pattern discovered: Cross-domain connection between work and  (sim=0.78, surprise=0.89)",
+        "source_rids": [
+          "01a18d82-69aa-7981-b441-9dd3cf7af190",
+          "01a18d82-6965-7f1f-99b3-1e170db6afe8"
+        ],
+        "suggested_action": "explore_cross_domain",
+        "trigger_type": "surprise_connection",
+        "urgency": 0.5568857953772711
+      },
+      {
+        "reason": "New pattern discovered: Cross-domain connection between work and  (sim=0.69, surprise=0.89)",
+        "source_rids": [
+          "01a18d82-690f-7a90-b75b-2331ceea45eb",
+          "01a18d82-6965-7f1f-99b3-1e170db6afe8"
+        ],
+        "suggested_action": "explore_cross_domain",
+        "trigger_type": "surprise_connection",
+        "urgency": 0.5
+      },
+      {
+        "reason": "New pattern discovered: Cross-domain connection between work and  (sim=0.64, surprise=0.89)",
+        "source_rids": [
+          "01a18d82-69a9-78d9-b7d8-b1e3e2f25d4e",
+          "01a18d82-6965-7f1f-99b3-1e170db6afe8"
+        ],
+        "suggested_action": "explore_cross_domain",
+        "trigger_type": "surprise_connection",
+        "urgency": 0.5
+      }
+    ]
+  }
+}

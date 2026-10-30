@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/relate",
+  "request": {
+    "entity": "Payments",
+    "target": "PostgreSQL",
+    "relationship": "uses"
+  },
+  "status": 200,
+  "response": {
+    "edge_id": "01a18d82-82ac-73f6-8ad4-91868a6b6671",
+    "log_index": 9
+  }
+}

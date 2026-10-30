@@ -1,0 +1,15 @@
+{
+  "method": "POST",
+  "path": "/v1/remember",
+  "request": {
+    "text": "x"
+  },
+  "status": 401,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing Bearer token"
+    }
+  },
+  "auth": "none"
+}

@@ -1,0 +1,12 @@
+{
+  "method": "DELETE",
+  "path": "/v1/sessions/nope",
+  "request": null,
+  "status": 500,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "database error: Query returned no rows"
+    }
+  }
+}

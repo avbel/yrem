@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "path": "/v1/current",
+  "request": null,
+  "status": 400,
+  "response": "Failed to deserialize query string: missing field `namespace`"
+}

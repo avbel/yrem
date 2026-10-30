@@ -1,0 +1,16 @@
+{
+  "method": "GET",
+  "path": "/v1/stats",
+  "request": null,
+  "status": 200,
+  "response": {
+    "active_memories": 8,
+    "consolidated_memories": 0,
+    "edges": 3,
+    "entities": 6,
+    "open_conflicts": 0,
+    "operations": 12,
+    "pending_triggers": 0,
+    "tombstoned_memories": 0
+  }
+}

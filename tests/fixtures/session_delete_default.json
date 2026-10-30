@@ -1,0 +1,12 @@
+{
+  "method": "DELETE",
+  "path": "/v1/sessions/01a18d83-8095-7b77-848c-dd171911c290",
+  "request": null,
+  "status": 200,
+  "response": {
+    "duration_secs": 7.6851255893707275,
+    "memory_count": 0,
+    "session_id": "01a18d83-8095-7b77-848c-dd171911c290",
+    "topics": []
+  }
+}

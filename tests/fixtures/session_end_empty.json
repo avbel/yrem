@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/session/end",
+  "request": {
+    "summary": "   "
+  },
+  "status": 400,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "summary must not be empty"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/conflicts/nonexistent-id/resolve",
+  "request": {
+    "strategy": "keep_a"
+  },
+  "status": 500,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "memory not found: conflict: nonexistent-id"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "method": "GET",
+  "path": "/v1/conflicts",
+  "request": null,
+  "status": 200,
+  "response": {
+    "conflicts": [
+      {
+        "conflict_id": "01a18d82-83dc-7e2d-b7c2-f390a01a2994",
+        "conflict_type": "preference",
+        "detected_at": 1793375503.3243124,
+        "detection_reason": "databases substitution: 'mysql' vs 'postgresql' (similarity=76%, rid_a=01a18d82-69fe-720b-8822-753be4726c9d, rid_b=01a18d82-690f-7a90-b75b-2331ceea45eb)",
+        "entity": null,
+        "memory_a": "01a18d82-69fe-720b-8822-753be4726c9d",
+        "memory_b": "01a18d82-690f-7a90-b75b-2331ceea45eb",
+        "priority": "high",
+        "status": "open"
+      }
+    ]
+  }
+}

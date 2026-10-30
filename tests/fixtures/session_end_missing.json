@@ -1,0 +1,7 @@
+{
+  "method": "POST",
+  "path": "/v1/session/end",
+  "request": {},
+  "status": 422,
+  "response": "Failed to deserialize the JSON body into the target type: missing field `summary` at line 1 column 2"
+}

@@ -70,9 +70,12 @@ pub struct RecallResponse {
 pub struct RecallHit {
     pub rid: String,
     pub text: String,
-    pub score: f64,
-    pub created_at: f64,
-    pub certainty: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certainty: Option<f64>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

@@ -1,0 +1,125 @@
+{
+  "method": "POST",
+  "path": "/v1/recall",
+  "request": {
+    "query": "which database does the payments service use?",
+    "top_k": 5,
+    "namespace": "payments",
+    "domain": "work"
+  },
+  "status": 200,
+  "response": {
+    "fallback": "fts5_keyword",
+    "results": [
+      {
+        "certainty": 1.0,
+        "created_at": 1793375496.702969,
+        "domain": "work",
+        "importance": 0.5,
+        "memory_type": "semantic",
+        "metadata": {},
+        "namespace": "payments",
+        "rid": "01a18d82-69fe-720b-8822-753be4726c9d",
+        "score": 0.564630666332578,
+        "source": "user",
+        "text": "The payments service database is MySQL",
+        "valence": 0.0,
+        "why_retrieved": [
+          "semantically similar (0.89)",
+          "recent",
+          "important (decay=0.50)",
+          "keyword_match",
+          "multi-lane agreement (2 lanes)",
+          "\u26a0 unresolved high conflict (preference) with 01a18d82-690f-7a90-b75b-2331ceea45eb \u2014 verify before relying"
+        ]
+      },
+      {
+        "certainty": 0.9,
+        "created_at": 1793375496.463076,
+        "domain": "work",
+        "importance": 0.8,
+        "memory_type": "semantic",
+        "metadata": {
+          "kind": "fact",
+          "team": "payments"
+        },
+        "namespace": "payments",
+        "rid": "01a18d82-690f-7a90-b75b-2331ceea45eb",
+        "score": 0.4290407276258986,
+        "source": "user",
+        "text": "Payments service uses PostgreSQL",
+        "valence": 0.1,
+        "why_retrieved": [
+          "semantically similar (0.71)",
+          "recent",
+          "important (decay=0.80)",
+          "keyword_match",
+          "multi-lane agreement (2 lanes)",
+          "\u26a0 unresolved high conflict (preference) with 01a18d82-69fe-720b-8822-753be4726c9d \u2014 verify before relying"
+        ]
+      },
+      {
+        "certainty": 1.0,
+        "created_at": 1793375496.616506,
+        "domain": "work",
+        "importance": 0.5,
+        "memory_type": "semantic",
+        "metadata": {},
+        "namespace": "payments",
+        "rid": "01a18d82-69ab-747e-8067-7394116d942b",
+        "score": 0.31595452243813366,
+        "source": "user",
+        "text": "The payments service runs nightly reconciliation at 02:00 UTC",
+        "valence": 0.0,
+        "why_retrieved": [
+          "semantically similar (0.56)",
+          "recent",
+          "important (decay=0.50)",
+          "keyword_match",
+          "multi-lane agreement (2 lanes)"
+        ]
+      },
+      {
+        "certainty": 1.0,
+        "created_at": 1793375496.616506,
+        "domain": "work",
+        "importance": 0.5,
+        "memory_type": "semantic",
+        "metadata": {},
+        "namespace": "payments",
+        "rid": "01a18d82-69a9-78d9-b7d8-b1e3e2f25d4e",
+        "score": 0.2796605935947256,
+        "source": "user",
+        "text": "The payments service is deployed on Kubernetes",
+        "valence": 0.0,
+        "why_retrieved": [
+          "recent",
+          "important (decay=0.50)",
+          "keyword_match",
+          "multi-lane agreement (2 lanes)"
+        ]
+      },
+      {
+        "certainty": 1.0,
+        "created_at": 1793375496.616506,
+        "domain": "work",
+        "importance": 0.7,
+        "memory_type": "semantic",
+        "metadata": {},
+        "namespace": "payments",
+        "rid": "01a18d82-69a8-74aa-9241-d965b4bd0b35",
+        "score": 0.2274625645939144,
+        "source": "user",
+        "text": "Alice leads the payments team",
+        "valence": 0.0,
+        "why_retrieved": [
+          "recent",
+          "important (decay=0.70)",
+          "keyword_match",
+          "multi-lane agreement (2 lanes)"
+        ]
+      }
+    ],
+    "total": 5
+  }
+}
