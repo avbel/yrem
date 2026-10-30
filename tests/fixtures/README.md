@@ -101,6 +101,40 @@ Fixtures: current.json, current_404.json, current_missing_ns.json
 Query: `namespace`, `min_count` (2), `max_avg_top_score` (0.5), `limit` (10). Response: `{"count":int,"gaps":[{"query","count","avg_top_score","avg_results","last_seen","last_seen_iso"}]}`. Gaps = queries recalled >= min_count times with low mean top score (fixture built by recalling an unrelated query 3x).
 Fixtures: gaps.json, gaps_loose.json
 
+## GET /v1/temporal/stale and GET /v1/temporal/upcoming -> 200
+Query (all optional): `days` (stale 30 / upcoming 7; clamped to 0..=3650, unparseable -> default), `limit` (20, capped 1000), `namespace`. Response: `{"memories":[row],"count":int}`; row = `rid, text, memory_type, namespace, domain, source, importance, certainty, valence, half_life, created_at, last_access, access_count, consolidation_status, consolidated_into, storage_tier, session_id, emotional_state, due_at, temporal_kind, metadata` (no `_iso` fields; `memory_type`/`metadata` naming as in recall). Stale = not accessed within `days` (fixture seeded with a record created 90 days back via `created_at`); `days=0` returns everything.
+`due_at` / `temporal_kind` are NOT settable via /v1/remember (ignored; a `due_at` inside `metadata` is just metadata, text dates are not parsed), so `upcoming` is always empty over HTTP in 0.20.0.
+Fixtures: temporal_stale.json, temporal_stale_params.json (days=0&limit=2), temporal_upcoming.json (empty)
+
+## POST /v1/temporal/as_of -> 200
+Request: `query` string REQUIRED (400 `missing 'query'`), `as_of` f64 unix seconds REQUIRED (400 `missing 'as_of' (unix seconds)`); optional `top_k` (10; > hard cap 1000 -> 400 `{"error","reason":"top_k_cap","hard_top_k_cap":1000}`, a flat error shape), `namespace`, `memory_type`, `query_embedding` [f32]. Response: `{"results":[<recall row>],"count":int,"as_of":f64}`; result rows have the same shape as /v1/recall results (`rid,text,score,scores{..},why_retrieved,current_status,superseded_by,...`). Memories created after `as_of` are excluded (as_of in the past -> `count:0`); the `as_of` is echoed back.
+Fixtures: temporal_as_of.json, temporal_as_of_empty.json, temporal_as_of_missing_query.json, temporal_as_of_missing_as_of.json, temporal_as_of_topk_cap.json
+
+## GET /v1/triggers and GET /v1/triggers/history -> 200
+Query: `limit` (20 / 50, capped 1000); history also `trigger_type`. Response: `{"triggers":[trigger],"count":int}`; trigger = `trigger_id, trigger_type ("decay_review"|"temporal_drift"|...), reason, urgency f64, suggested_action, source_rids [rid], context {..type specific}, status ("pending"|"delivered"|"acknowledged"|"acted"|"dismissed"), created_at, expires_at (+7d), delivered_at, acknowledged_at, acted_at` (timestamps null until set). /v1/triggers = pending only; history = all statuses (pending included), with `trigger_type` filter. Triggers come from POST /v1/think (`{"triggers":[{trigger_type,reason,urgency,suggested_action,source_rids}],...}` in its response; no trigger_id there); with fresh recent data think yields none.
+Fixtures: triggers.json (2 pending), triggers_limit.json, triggers_after.json (one dismissed), triggers_history_before.json, triggers_history.json, triggers_history_filtered.json
+
+## POST /v1/triggers/{id}/{action}
+Actions: `acknowledge|deliver|act|dismiss`; body ignored (none needed). Node-local, no replication. 200 `{"trigger_id","action","changed":true,"node_local":true}`. Unknown action -> 400 `{"error":{"code":"generic","message":"unknown trigger action 'x' (acknowledge|deliver|act|dismiss)"}}`. Unknown id OR a transition the current state does not permit -> 404 `trigger '<id>' not found or not in a state that permits '<action>'`. Observed state machine: pending -deliver-> delivered -acknowledge-> acknowledged -act-> acted; dismiss works from pending; acknowledge/act from pending -> 404; repeating a transition -> 404; dismiss after act -> 404.
+Fixtures: trigger_deliver.json, trigger_acknowledge.json, trigger_act.json, trigger_dismiss.json, trigger_deliver_again.json, trigger_acknowledge_from_pending.json, trigger_dismiss_after_act.json, trigger_act_404.json (unknown id), trigger_act_bad_action.json
+
+## POST /v1/claim -> 200
+Request: `src`, `rel_type`, `dst` strings REQUIRED (each 400 `missing '<field>'`); optional `namespace` ("default"), `polarity` int (1), `modality` ("asserted"), `valid_from`/`valid_to` f64, `extractor` ("manual"), `extractor_version`, `confidence_band` ("medium"), `source_memory_rid`, `span_start`/`span_end` int, `weight` f64 (1.0). Response: `{"claim_id":uuid7,"namespace"}`. Successor of the deprecated POST /v1/relate (its response carries `deprecation: true` + `link: </v1/claim>; rel="successor-version"` headers).
+Fixtures: claim.json (all fields), claim_minimal.json, claim_missing_src.json, claim_missing_rel_type.json, claim_missing_dst.json
+
+## GET /v1/claims -> 200
+Query: `entity` REQUIRED (400 `missing 'entity' query parameter`), `namespace` optional (omitted -> not filtered by "ops"; claim in "default" is found with no namespace). Response: `{"claims":[{claim_id,src,rel_type,dst,namespace,polarity,modality,valid_from,valid_to,extractor,confidence_band,source_memory_rid,weight,grounding int,status_suggestion ("active"),created_at}]}`; unknown entity -> `{"claims":[]}`.
+Fixtures: claims.json, claims_default_ns.json, claims_empty.json, claims_missing_entity.json
+
+## POST /v1/procedures/surface -> 200
+Request: `query` string REQUIRED (400 `missing 'query'`); optional `top_k` (5, hard cap 1000 like as_of), `domain`, `namespace`, `query_embedding`. Response: `{"results":[<recall row>],"count":int}` over `memory_type:"procedural"` memories (seed with /v1/remember `memory_type:"procedural"`). No similarity floor: an unrelated query still returns the procedural memory with a low score.
+Fixtures: procedures_surface.json, procedures_surface_unrelated.json, procedures_surface_missing.json
+
+## GET /v1/tasks -> 200 (read-only over HTTP)
+Query: `namespace` ("default"), `status`. Response: `{"tasks":[..],"count":int}`; always empty here because tasks cannot be created over HTTP. GET /v1/tasks/{id} unknown -> 404 `task '<id>' not found`.
+501 (deferred cluster-global writes, flat body `{"error":"not_yet_available_over_http","operation":"task.add","reason":"...","deferred":true}`): POST /v1/tasks, PATCH/DELETE /v1/tasks/{id}, POST /v1/procedures, POST /v1/procedures/{rid}/reinforce, category learn/reset, correct.
+Fixtures: tasks.json, tasks_filtered.json, task_get_404.json, tasks_add_501.json, procedures_learn_501.json
+
 ## Other observations
 - Extra routes confirmed working: GET /v1/personality (`{"traits":[{"name","score"}]}`), GET /v1/cluster (`{"clustered":false,"message":"single-node mode (no replication)"}`). Others exist (/v1/databases, /v1/claim(s), /v1/alias, /v1/skills/*, /v1/temporal/*, /v1/categories, /v1/tasks, /v1/procedures, /v1/triggers, /v1/jobs, /metrics, /admin).
 - Missing Content-Type on POST -> 415 (no_content_type_415.json). Wrong method -> 405 empty body (wrong_method.json). Invalid JSON -> 400 plain string (invalid_json.json). Unauthenticated: unauthorized.json (GET /v1/stats, no token), bad_token.json.

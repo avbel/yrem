@@ -201,11 +201,11 @@ Toolchain 1.99.1, edition 2024. Use:
   - [x] `GET /v1/session/digest`, `POST /v1/session/end` (summary capture), `POST /v1/sessions`, `DELETE /v1/sessions/{id}`
   - [x] `GET /v1/memory/{rid}`, `GET /v1/memories`, `GET /v1/current?namespace=`
   - [x] `GET /v1/insights/gaps`
-- [ ] Endpoints v0.2:
-  - [ ] `GET /v1/temporal/stale`, `GET /v1/temporal/upcoming`, `POST /v1/temporal/as_of`
-  - [ ] `GET /v1/triggers`, `GET /v1/triggers/history`, `POST /v1/triggers/{id}/{action}`
-  - [ ] `POST /v1/claim`, `GET /v1/claims`
-  - [ ] `POST /v1/procedures/surface`, `GET /v1/tasks`
+- [x] Endpoints v0.2 (CLI-only: `yrem temporal|trigger|claim|procedure|task`; MCP tools stay under Later):
+  - [x] `GET /v1/temporal/stale`, `GET /v1/temporal/upcoming`, `POST /v1/temporal/as_of`
+  - [x] `GET /v1/triggers`, `GET /v1/triggers/history`, `POST /v1/triggers/{id}/{action}`
+  - [x] `POST /v1/claim`, `GET /v1/claims`
+  - [x] `POST /v1/procedures/surface`, `GET /v1/tasks`
 - [x] Unavailable server-side (501), do not wrap: task add/update/delete, procedure learn/reinforce, category learn/reset.
 
 ## M2 — Ops layer (`src/ops`)
@@ -328,9 +328,9 @@ Toolchain 1.99.1, edition 2024. Use:
 
 Rule: every module ships with its tests in the same PR. A PR that lowers coverage fails CI.
 
-- [x] **Coverage gate:** cargo-llvm-cov 0.9.1, `cargo llvm-cov --all-features --fail-under-lines 97 --fail-under-regions 95`.
+- [x] **Coverage gate:** cargo-llvm-cov 0.9.1, `cargo llvm-cov --all-features --fail-under-lines 98 --fail-under-regions 96`.
   - [x] lcov artifact + a per-file table in the job summary. No third-party coverage service.
-  - [ ] Ratchet the floor up as coverage grows; never down. (Raised to 97 / 95; measured 98.6 % lines, 97.0 % regions.)
+  - [ ] Ratchet the floor up as coverage grows; never down. (Raised to 98 / 96 on 2026-10-30; measured 98.2 % lines, 97.0 % regions.)
 - [ ] **Mutation testing:** cargo-mutants 27.1.0, weekly scheduled job. Surviving mutants in `ops`, `error`, `mcp` and `time` get an issue each. Target: zero survivors in those modules.
 - [x] **Test support:**
   - [x] `tests/support/fake_server.rs`: a `tokio::net::TcpListener` task with a scripted queue of (expected method, path, auth, body matcher) → (status, fixture, optional delay) pairs. It records every request so tests can assert which calls happened and which did not.

@@ -1,0 +1,12 @@
+{
+  "method": "GET",
+  "path": "/v1/tasks/nonexistent-id",
+  "request": null,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "task 'nonexistent-id' not found"
+    }
+  },
+  "status": 404
+}

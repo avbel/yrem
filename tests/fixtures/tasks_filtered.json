@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/v1/tasks?namespace=ops&status=pending",
+  "request": null,
+  "response": {
+    "count": 0,
+    "tasks": []
+  },
+  "status": 200
+}

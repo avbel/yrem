@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "path": "/v1/triggers/01a18dce-949a-7135-a256-4e5ac3b57768/acknowledge",
+  "request": {},
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "trigger '01a18dce-949a-7135-a256-4e5ac3b57768' not found or not in a state that permits 'acknowledge'"
+    }
+  },
+  "status": 404
+}

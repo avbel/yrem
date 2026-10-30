@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "path": "/v1/triggers/00000000-0000-7000-8000-000000000000/act",
+  "request": {},
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "trigger '00000000-0000-7000-8000-000000000000' not found or not in a state that permits 'act'"
+    }
+  },
+  "status": 404
+}

@@ -1,0 +1,105 @@
+{
+  "method": "POST",
+  "path": "/v1/temporal/as_of",
+  "request": {
+    "as_of": 4000000000.0,
+    "namespace": "ops",
+    "query": "ledger migration",
+    "top_k": 2
+  },
+  "response": {
+    "as_of": 4000000000.0,
+    "count": 2,
+    "results": [
+      {
+        "aged_last_verified": null,
+        "best_span": null,
+        "certainty": 1.0,
+        "created_at": 1793380470.071755,
+        "current_status": "active",
+        "disputed_with": [],
+        "domain": "",
+        "emotional_state": null,
+        "event_time_max": null,
+        "event_time_min": null,
+        "importance": 0.7,
+        "memory_type": "semantic",
+        "metadata": {
+          "due_at": 1893456000,
+          "kind": "fact"
+        },
+        "namespace": "ops",
+        "pack": null,
+        "rid": "01a18dce-4d37-7788-b962-b8505c2fce35",
+        "score": 0.34726079724044123,
+        "scores": {
+          "contributions": {
+            "decay": 0.03499881482887905,
+            "graph_proximity": 0.0,
+            "importance": 0.5529846347772693,
+            "recency": 0.07499633608353645,
+            "similarity": 0.3069678100255096
+          },
+          "decay": 0.699976296577581,
+          "graph_proximity": 0.0,
+          "importance": 0.7,
+          "recency": 0.9999511477804861,
+          "similarity": 0.6139356200510192,
+          "valence_multiplier": 1.0
+        },
+        "source": "user",
+        "superseded_by": null,
+        "text": "Alice owns the Zephyr ledger migration",
+        "valence": 0.0,
+        "why_retrieved": [
+          "semantically similar (0.61)",
+          "recent",
+          "important (decay=0.70)"
+        ]
+      },
+      {
+        "aged_last_verified": null,
+        "best_span": null,
+        "certainty": 1.0,
+        "created_at": 1793380470.073782,
+        "current_status": "active",
+        "disputed_with": [],
+        "domain": "",
+        "emotional_state": null,
+        "event_time_max": null,
+        "event_time_min": null,
+        "importance": 0.5,
+        "memory_type": "semantic",
+        "metadata": {},
+        "namespace": "ops",
+        "pack": null,
+        "rid": "01a18dce-4d39-7e16-a8aa-f5b731c7d971",
+        "score": 0.19002926637133385,
+        "scores": {
+          "contributions": {
+            "decay": 0.02499915350727579,
+            "graph_proximity": 0.0,
+            "importance": 0.3062255309614152,
+            "recency": 0.07499633633489257,
+            "similarity": 0.17430955107883195
+          },
+          "decay": 0.4999830701455158,
+          "graph_proximity": 0.0,
+          "importance": 0.5,
+          "recency": 0.999951151131901,
+          "similarity": 0.3486191021576639,
+          "valence_multiplier": 1.0
+        },
+        "source": "user",
+        "superseded_by": null,
+        "text": "Review the Zephyr ledger runbook",
+        "valence": 0.0,
+        "why_retrieved": [
+          "recent",
+          "important (decay=0.50)"
+        ]
+      }
+    ]
+  },
+  "status": 200
+}

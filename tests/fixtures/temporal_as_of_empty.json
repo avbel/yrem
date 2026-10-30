@@ -1,0 +1,15 @@
+{
+  "method": "POST",
+  "path": "/v1/temporal/as_of",
+  "request": {
+    "as_of": 1000000000.0,
+    "namespace": "ops",
+    "query": "ledger migration"
+  },
+  "response": {
+    "as_of": 1000000000.0,
+    "count": 0,
+    "results": []
+  },
+  "status": 200
+}

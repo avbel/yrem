@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "path": "/v1/procedures/surface",
+  "request": {},
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing 'query'"
+    }
+  },
+  "status": 400
+}

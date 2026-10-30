@@ -7,7 +7,7 @@ use std::time::Duration;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::{Method, StatusCode, Url};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -224,6 +224,59 @@ impl Client {
     pub async fn gaps(&self, query: &GapsQuery) -> Result<Value> {
         let q = to_value(query)?;
         self.get("memory_gaps", "/v1/insights/gaps", Some(&q)).await
+    }
+
+    pub async fn temporal_stale(&self, query: &TemporalQuery) -> Result<Value> {
+        let q = to_value(query)?;
+        self.get("temporal_stale", "/v1/temporal/stale", Some(&q))
+            .await
+    }
+
+    pub async fn temporal_upcoming(&self, query: &TemporalQuery) -> Result<Value> {
+        let q = to_value(query)?;
+        self.get("temporal_upcoming", "/v1/temporal/upcoming", Some(&q))
+            .await
+    }
+
+    pub async fn temporal_as_of(&self, req: &AsOfRequest) -> Result<Value> {
+        self.post("temporal_as_of", "/v1/temporal/as_of", req).await
+    }
+
+    pub async fn triggers(&self, query: &TriggersQuery) -> Result<Value> {
+        let q = to_value(query)?;
+        self.get("trigger_list", "/v1/triggers", Some(&q)).await
+    }
+
+    pub async fn triggers_history(&self, query: &TriggersQuery) -> Result<Value> {
+        let q = to_value(query)?;
+        self.get("trigger_history", "/v1/triggers/history", Some(&q))
+            .await
+    }
+
+    /// `action` is one of `deliver`, `acknowledge`, `act`, `dismiss`.
+    pub async fn trigger_action(&self, id: &str, action: &str) -> Result<Value> {
+        let path = format!("/v1/triggers/{}/{action}", segment(id));
+        self.post(&format!("trigger_{action}"), &path, &json!({}))
+            .await
+    }
+
+    pub async fn claim(&self, req: &ClaimRequest) -> Result<Value> {
+        self.post("claim_add", "/v1/claim", req).await
+    }
+
+    pub async fn claims(&self, query: &ClaimsQuery) -> Result<Value> {
+        let q = to_value(query)?;
+        self.get("claim_list", "/v1/claims", Some(&q)).await
+    }
+
+    pub async fn procedures_surface(&self, req: &SurfaceRequest) -> Result<Value> {
+        self.post("procedure_surface", "/v1/procedures/surface", req)
+            .await
+    }
+
+    pub async fn tasks(&self, query: &TasksQuery) -> Result<Value> {
+        let q = to_value(query)?;
+        self.get("task_list", "/v1/tasks", Some(&q)).await
     }
 }
 

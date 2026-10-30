@@ -1,0 +1,28 @@
+{
+  "method": "GET",
+  "path": "/v1/claims?entity=Bob&namespace=ops",
+  "request": null,
+  "response": {
+    "claims": [
+      {
+        "claim_id": "01a18dcf-1ed2-7ef7-9ef2-124133e63777",
+        "confidence_band": "high",
+        "created_at": 1793380523.730093,
+        "dst": "Zephyr ledger migration",
+        "extractor": "manual",
+        "grounding": 0,
+        "modality": "asserted",
+        "namespace": "ops",
+        "polarity": 1,
+        "rel_type": "reviews",
+        "source_memory_rid": "01a18dcf-1ebd-78ea-9981-9fabefe5fc93",
+        "src": "Bob",
+        "status_suggestion": "active",
+        "valid_from": 1790000000.0,
+        "valid_to": null,
+        "weight": 0.8
+      }
+    ]
+  },
+  "status": 200
+}

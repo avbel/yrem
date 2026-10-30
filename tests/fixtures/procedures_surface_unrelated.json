@@ -1,0 +1,55 @@
+{
+  "method": "POST",
+  "path": "/v1/procedures/surface",
+  "request": {
+    "query": "quantum gardening"
+  },
+  "response": {
+    "count": 1,
+    "results": [
+      {
+        "aged_last_verified": null,
+        "best_span": null,
+        "certainty": 1.0,
+        "created_at": 1793380488.343193,
+        "current_status": "active",
+        "disputed_with": [],
+        "domain": "deploy",
+        "emotional_state": null,
+        "event_time_max": null,
+        "event_time_min": null,
+        "importance": 0.9,
+        "memory_type": "procedural",
+        "metadata": {},
+        "namespace": "ops",
+        "pack": null,
+        "rid": "01a18dce-9497-7bf0-a9df-d0e23201f4bd",
+        "score": 0.031786686614725716,
+        "scores": {
+          "contributions": {
+            "decay": 0.044998174096291726,
+            "graph_proximity": 0.0,
+            "importance": 0.06653792808098936,
+            "recency": 0.07499560966905648,
+            "similarity": 0.029811984964907057
+          },
+          "decay": 0.8999634819258344,
+          "graph_proximity": 0.0,
+          "importance": 0.9,
+          "recency": 0.9999414622540864,
+          "similarity": 0.059623969929814113,
+          "valence_multiplier": 1.0
+        },
+        "source": "user",
+        "superseded_by": null,
+        "text": "Procedure: to roll back a deploy, drain the queue then redeploy the previous tag",
+        "valence": 0.0,
+        "why_retrieved": [
+          "recent",
+          "important (decay=0.90)"
+        ]
+      }
+    ]
+  },
+  "status": 200
+}

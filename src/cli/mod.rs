@@ -17,10 +17,12 @@ use crate::config::{Config, Overrides};
 use crate::error::Error;
 use crate::mcp::Server;
 use crate::ops::{
-    App, ConflictDismissArgs, ConflictListArgs, ConflictResolveArgs, CorrectArgs, ForgetArgs,
-    GraphEdgesArgs, GraphRelateArgs, MemoryCurrentArgs, MemoryGapsArgs, MemoryGetArgs,
-    MemoryListArgs, MemoryStatsArgs, RecallArgs, RememberArgs, SessionCaptureArgs,
-    SessionDigestArgs, SessionEndArgs, SessionStartArgs, ThinkArgs,
+    App, ClaimAddArgs, ClaimListArgs, ConflictDismissArgs, ConflictListArgs, ConflictResolveArgs,
+    CorrectArgs, ForgetArgs, GraphEdgesArgs, GraphRelateArgs, MemoryCurrentArgs, MemoryGapsArgs,
+    MemoryGetArgs, MemoryListArgs, MemoryStatsArgs, ProcedureSurfaceArgs, RecallArgs, RememberArgs,
+    SessionCaptureArgs, SessionDigestArgs, SessionEndArgs, SessionStartArgs, TaskListArgs,
+    TemporalAsOfArgs, TemporalListArgs, ThinkArgs, TriggerActionArgs, TriggerHistoryArgs,
+    TriggerListArgs,
 };
 use crate::output::{self, Format};
 
@@ -83,6 +85,21 @@ pub enum Command {
     /// Inspect stored memories.
     #[command(subcommand)]
     Memory(MemoryCommand),
+    /// Stale, upcoming and point-in-time memories.
+    #[command(subcommand)]
+    Temporal(TemporalCommand),
+    /// Server-raised triggers.
+    #[command(subcommand)]
+    Trigger(TriggerCommand),
+    /// Temporal claims about entities.
+    #[command(subcommand)]
+    Claim(ClaimCommand),
+    /// Stored procedures.
+    #[command(subcommand)]
+    Procedure(ProcedureCommand),
+    /// Tasks.
+    #[command(subcommand)]
+    Task(TaskCommand),
     /// Session-start briefing (alias of `session digest`).
     Digest(DigestCli),
     /// Run an MCP tool with raw JSON arguments.
@@ -135,6 +152,52 @@ pub enum MemoryCommand {
     Gaps(MemoryGapsArgs),
     /// Store statistics.
     Stats(MemoryStatsArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TemporalCommand {
+    /// Memories not accessed within the window.
+    Stale(TemporalListArgs),
+    /// Memories due within the window.
+    Upcoming(TemporalListArgs),
+    /// Recall as the store was at a past time.
+    AsOf(TemporalAsOfArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TriggerCommand {
+    /// List pending triggers.
+    List(TriggerListArgs),
+    /// List triggers of every status.
+    History(TriggerHistoryArgs),
+    /// Mark a trigger delivered.
+    Deliver(TriggerActionArgs),
+    /// Mark a delivered trigger acknowledged.
+    Acknowledge(TriggerActionArgs),
+    /// Mark an acknowledged trigger acted on.
+    Act(TriggerActionArgs),
+    /// Dismiss a pending trigger.
+    Dismiss(TriggerActionArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ClaimCommand {
+    /// Assert a claim between two entities.
+    Add(ClaimAddArgs),
+    /// List claims about an entity.
+    List(ClaimListArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProcedureCommand {
+    /// Procedures relevant to a query.
+    Surface(ProcedureSurfaceArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TaskCommand {
+    /// List tasks.
+    List(TaskListArgs),
 }
 
 #[derive(Debug, Args)]
@@ -231,6 +294,19 @@ async fn execute(cli: Cli, url_from_env: bool, token_from_env: bool) -> anyhow::
         Command::Memory(MemoryCommand::List(a)) => app.memory_list(a).await?,
         Command::Memory(MemoryCommand::Gaps(a)) => app.memory_gaps(a).await?,
         Command::Memory(MemoryCommand::Stats(a)) => app.memory_stats(a).await?,
+        Command::Temporal(TemporalCommand::Stale(a)) => app.temporal_stale(a).await?,
+        Command::Temporal(TemporalCommand::Upcoming(a)) => app.temporal_upcoming(a).await?,
+        Command::Temporal(TemporalCommand::AsOf(a)) => app.temporal_as_of(a).await?,
+        Command::Trigger(TriggerCommand::List(a)) => app.trigger_list(a).await?,
+        Command::Trigger(TriggerCommand::History(a)) => app.trigger_history(a).await?,
+        Command::Trigger(TriggerCommand::Deliver(a)) => app.trigger_deliver(a).await?,
+        Command::Trigger(TriggerCommand::Acknowledge(a)) => app.trigger_acknowledge(a).await?,
+        Command::Trigger(TriggerCommand::Act(a)) => app.trigger_act(a).await?,
+        Command::Trigger(TriggerCommand::Dismiss(a)) => app.trigger_dismiss(a).await?,
+        Command::Claim(ClaimCommand::Add(a)) => app.claim_add(a).await?,
+        Command::Claim(ClaimCommand::List(a)) => app.claim_list(a).await?,
+        Command::Procedure(ProcedureCommand::Surface(a)) => app.procedure_surface(a).await?,
+        Command::Task(TaskCommand::List(a)) => app.task_list(a).await?,
         Command::Call(c) => {
             let raw = if let Some(j) = c.json {
                 j

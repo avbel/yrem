@@ -205,6 +205,81 @@ pub struct GapsQuery {
     pub limit: Option<u32>,
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TemporalQuery {
+    pub days: Option<u32>,
+    pub limit: Option<u32>,
+    pub namespace: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct AsOfRequest {
+    pub query: String,
+    /// Unix seconds.
+    pub as_of: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TriggersQuery {
+    pub limit: Option<u32>,
+    pub trigger_type: Option<String>,
+}
+
+/// `POST /v1/claim`.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ClaimRequest {
+    pub src: String,
+    pub rel_type: String,
+    pub dst: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub polarity: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modality: Option<String>,
+    /// Unix seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<f64>,
+    /// Unix seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid_to: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence_band: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_memory_rid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ClaimsQuery {
+    pub entity: String,
+    pub namespace: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct SurfaceRequest {
+    pub query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct TasksQuery {
+    pub namespace: Option<String>,
+    pub status: Option<String>,
+}
+
 /// One stored memory as `GET /v1/memory/{rid}` returns it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]

@@ -79,6 +79,15 @@ fn args_structs_agree() {
     check::<MemoryListArgs>("memory_list");
     check::<MemoryGapsArgs>("memory_gaps");
     check::<MemoryStatsArgs>("memory_stats");
+    check::<TemporalListArgs>("temporal_list");
+    check::<TemporalAsOfArgs>("temporal_as_of");
+    check::<TriggerListArgs>("trigger_list");
+    check::<TriggerHistoryArgs>("trigger_history");
+    check::<TriggerActionArgs>("trigger_action");
+    check::<ClaimAddArgs>("claim_add");
+    check::<ClaimListArgs>("claim_list");
+    check::<ProcedureSurfaceArgs>("procedure_surface");
+    check::<TaskListArgs>("task_list");
 }
 
 #[test]

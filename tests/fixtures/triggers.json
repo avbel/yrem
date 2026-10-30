@@ -1,0 +1,55 @@
+{
+  "method": "GET",
+  "path": "/v1/triggers",
+  "request": null,
+  "response": {
+    "count": 2,
+    "triggers": [
+      {
+        "acknowledged_at": null,
+        "acted_at": null,
+        "context": {
+          "current_score": 0.0,
+          "days_since_access": 90.0000004170835,
+          "original_importance": 0.9,
+          "text": "Old retention policy note for the Zephyr archive",
+          "type": "semantic",
+          "valence": 0.0
+        },
+        "created_at": 1793380488.345907,
+        "delivered_at": null,
+        "expires_at": 1793985288.345907,
+        "reason": "Important memory (importance=0.9) has decayed to 0.000 after 90 days",
+        "source_rids": [
+          "01a18dce-9493-7ab3-a1fb-9218c0ffec13"
+        ],
+        "status": "pending",
+        "suggested_action": "ask_user_to_confirm_or_forget",
+        "trigger_id": "01a18dce-949a-7135-a256-4e5ac3b57768",
+        "trigger_type": "decay_review",
+        "urgency": 0.9
+      },
+      {
+        "acknowledged_at": null,
+        "acted_at": null,
+        "context": {
+          "age_days": 90.00000042084467,
+          "text": "Old retention policy note for the Zephyr archive"
+        },
+        "created_at": 1793380488.345907,
+        "delivered_at": null,
+        "expires_at": 1793985288.345907,
+        "reason": "Semantic memory is 90 days old and may be outdated",
+        "source_rids": [
+          "01a18dce-9493-7ab3-a1fb-9218c0ffec13"
+        ],
+        "status": "pending",
+        "suggested_action": "verify_or_update",
+        "trigger_id": "01a18dce-949b-79ea-a2e7-b5fe5f135e81",
+        "trigger_type": "temporal_drift",
+        "urgency": 0.24657534361875252
+      }
+    ]
+  },
+  "status": 200
+}

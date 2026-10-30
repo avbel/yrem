@@ -871,6 +871,181 @@ fn exit_code_5_service_unavailable() {
     );
 }
 
+// ------------------------------------------------------------ v0.2 commands
+
+#[test]
+fn temporal_commands() {
+    let srv = FakeServer::start(vec![
+        Step::get("/v1/temporal/stale?days=0&limit=2&namespace=ops")
+            .fixture("temporal_stale_params"),
+        Step::get("/v1/temporal/upcoming?days=30").fixture("temporal_upcoming"),
+        Step::post("/v1/temporal/as_of")
+            .body(|b| b["as_of"] == 4_000_000_000.0 && b["top_k"] == 2 && b["query"] == "q1")
+            .fixture("temporal_as_of"),
+        Step::post("/v1/temporal/as_of")
+            .body(|b| b["query"] == "from stdin" && b["memory_type"] == "procedural")
+            .fixture("temporal_as_of_empty"),
+    ]);
+    let v = ok(&yrem(
+        &srv,
+        &[
+            "temporal",
+            "stale",
+            "--days",
+            "0",
+            "--limit",
+            "2",
+            "--namespace",
+            "ops",
+        ],
+    ));
+    assert_eq!(v["count"], 2);
+    let v = ok(&yrem(&srv, &["temporal", "upcoming", "--days", "30"]));
+    assert_eq!(v["count"], 0);
+    let v = ok(&yrem(
+        &srv,
+        &[
+            "temporal",
+            "as-of",
+            "q1",
+            "--at",
+            "4000000000",
+            "--top-k",
+            "2",
+        ],
+    ));
+    assert_eq!(v["count"], 2);
+    let out = yrem_stdin(
+        &srv,
+        &[
+            "temporal",
+            "as-of",
+            "--stdin",
+            "--at",
+            "2026-01-02",
+            "--memory-type",
+            "procedural",
+        ],
+        "from stdin\n",
+    );
+    ok(&out);
+    srv.assert_done();
+}
+
+#[test]
+fn temporal_as_of_usage_errors() {
+    let srv = FakeServer::start(vec![]);
+    assert_eq!(yrem(&srv, &["temporal", "as-of", "q"]).code, 2);
+    let out = yrem(&srv, &["temporal", "as-of", "q", "--at", "soon"]);
+    assert_eq!(out.code, 2);
+    let out = yrem(
+        &srv,
+        &["temporal", "as-of", "q", "--at", "7d", "--top-k", "0"],
+    );
+    assert_eq!(out.code, 2);
+    assert!(srv.calls().is_empty());
+}
+
+#[test]
+fn trigger_commands() {
+    let id = "01a18dce-949a-7135-a256-4e5ac3b57768";
+    let srv = FakeServer::start(vec![
+        Step::get("/v1/triggers?limit=1").fixture("triggers_limit"),
+        Step::get("/v1/triggers/history?limit=5&trigger_type=decay_review")
+            .fixture("triggers_history_filtered"),
+        Step::post(&format!("/v1/triggers/{id}/deliver")).fixture("trigger_deliver"),
+        Step::post(&format!("/v1/triggers/{id}/acknowledge")).fixture("trigger_acknowledge"),
+        Step::post(&format!("/v1/triggers/{id}/act")).fixture("trigger_act"),
+        Step::post(&format!("/v1/triggers/{id}/dismiss")).fixture("trigger_dismiss"),
+        Step::post("/v1/triggers/nope/act").fixture("trigger_act_404"),
+    ]);
+    assert_eq!(
+        ok(&yrem(&srv, &["trigger", "list", "--limit", "1"]))["count"],
+        1
+    );
+    let v = ok(&yrem(
+        &srv,
+        &[
+            "trigger",
+            "history",
+            "--limit",
+            "5",
+            "--trigger-type",
+            "decay_review",
+        ],
+    ));
+    assert_eq!(v["count"], 1);
+    for action in ["deliver", "acknowledge", "act", "dismiss"] {
+        let v = ok(&yrem(&srv, &["trigger", action, id]));
+        assert_eq!(v["changed"], true, "{action}");
+    }
+    let out = yrem(&srv, &["trigger", "act", "nope"]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    srv.assert_done();
+}
+
+#[test]
+fn claim_and_procedure_and_task_commands() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/claim")
+            .body(|b| {
+                b["src"] == "Bob"
+                    && b["rel_type"] == "reviews"
+                    && b["dst"] == "Zephyr"
+                    && b["valid_from"] == 1_790_000_000.0
+                    && b["polarity"] == -1
+                    && b["weight"] == 0.8
+                    && b["confidence_band"] == "high"
+            })
+            .fixture("claim"),
+        Step::get("/v1/claims?entity=Bob&namespace=ops").fixture("claims"),
+        Step::post("/v1/procedures/surface")
+            .body(|b| b["query"] == "roll back" && b["top_k"] == 3 && b["domain"] == "deploy")
+            .fixture("procedures_surface"),
+        Step::get("/v1/tasks?namespace=ops&status=pending").fixture("tasks_filtered"),
+    ]);
+    let v = ok(&yrem(
+        &srv,
+        &[
+            "claim",
+            "add",
+            "Bob",
+            "reviews",
+            "Zephyr",
+            "--valid-from",
+            "1790000000",
+            "--polarity",
+            "-1",
+            "--weight",
+            "0.8",
+            "--confidence-band",
+            "high",
+        ],
+    ));
+    assert!(v["claim_id"].is_string());
+    let v = ok(&yrem(&srv, &["claim", "list", "Bob", "--namespace", "ops"]));
+    assert_eq!(v["claims"][0]["src"], "Bob");
+    let v = ok(&yrem(
+        &srv,
+        &[
+            "procedure",
+            "surface",
+            "roll back",
+            "--top-k",
+            "3",
+            "--domain",
+            "deploy",
+        ],
+    ));
+    assert_eq!(v["count"], 1);
+    let v = ok(&yrem(
+        &srv,
+        &["task", "list", "--namespace", "ops", "--status", "pending"],
+    ));
+    assert_eq!(v["count"], 0);
+    srv.assert_done();
+}
+
 // ------------------------------------------------------------ help goldens
 
 fn golden(name: &str, args: &[&str]) {

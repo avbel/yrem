@@ -1,0 +1,28 @@
+{
+  "method": "GET",
+  "path": "/v1/claims?entity=Carol",
+  "request": null,
+  "response": {
+    "claims": [
+      {
+        "claim_id": "01a18dcf-1ed5-71ec-b8c5-a1b85ee461c3",
+        "confidence_band": "medium",
+        "created_at": 1793380523.733702,
+        "dst": "Zephyr budget",
+        "extractor": "manual",
+        "grounding": 0,
+        "modality": "asserted",
+        "namespace": "default",
+        "polarity": 1,
+        "rel_type": "approves",
+        "source_memory_rid": null,
+        "src": "Carol",
+        "status_suggestion": "active",
+        "valid_from": null,
+        "valid_to": null,
+        "weight": 1.0
+      }
+    ]
+  },
+  "status": 200
+}

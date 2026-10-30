@@ -1,0 +1,15 @@
+{
+  "method": "POST",
+  "path": "/v1/temporal/as_of",
+  "request": {
+    "as_of": 4000000000.0,
+    "query": "x",
+    "top_k": 100000
+  },
+  "response": {
+    "error": "top_k exceeds hard cap; reduce top_k or use the v2 scan endpoint when available",
+    "hard_top_k_cap": 1000,
+    "reason": "top_k_cap"
+  },
+  "status": 400
+}

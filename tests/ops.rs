@@ -333,6 +333,42 @@ async fn recall_min_score_ratio_filter() {
     assert_eq!(out["filtered_by_min_score_ratio"], 2);
 }
 
+// top < 1 tells `ratio * top` from `ratio / top`; 0.4 is exactly 0.5 * 0.8 and must be kept.
+#[tokio::test(flavor = "current_thread")]
+async fn recall_min_score_ratio_scales_with_top_and_keeps_the_boundary() {
+    let srv = FakeServer::start(vec![hits(json!([
+        {"rid": "top", "score": 0.8},
+        {"rid": "mid", "score": 0.5},
+        {"rid": "edge", "score": 0.4},
+        {"rid": "low", "score": 0.3},
+    ]))]);
+    let out = app(&srv)
+        .recall(RecallArgs {
+            query: s("q"),
+            min_score_ratio: Some(0.5),
+            ..RecallArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(rids(&out), ["top", "mid", "edge"]);
+    assert_eq!(out["filtered_by_min_score_ratio"], 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn recall_filter_that_removes_nothing_reports_no_count() {
+    let srv = FakeServer::start(vec![hits(json!([{"rid": "a", "score": 0.9}]))]);
+    let out = app(&srv)
+        .recall(RecallArgs {
+            query: s("q"),
+            refine_exclude: Some(vec![s("zzz")]),
+            ..RecallArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(rids(&out), ["a"]);
+    assert!(out.get("filtered_by_refine_exclude").is_none());
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn recall_min_score_ratio_without_any_score_keeps_all() {
     let srv = FakeServer::start(vec![hits(json!([{"rid": "a"}, {"rid": "b"}]))]);
@@ -1565,4 +1601,500 @@ async fn correct_emulated_remember_without_rid_is_decode_error() {
         3,
         "no forget after an unreadable remember"
     );
+}
+
+// ---------------------------------------------------------------- v0.2 endpoints
+
+use yrem::ops::{
+    ClaimAddArgs, ClaimListArgs, ProcedureSurfaceArgs, TaskListArgs, TemporalAsOfArgs,
+    TemporalListArgs, TriggerActionArgs, TriggerHistoryArgs, TriggerListArgs,
+};
+
+/// Path of a captured fixture, e.g. `/v1/triggers/<id>/act`.
+fn fixture_path(name: &str) -> String {
+    support::fake_server::fixture(name)["path"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn trigger_id(name: &str) -> String {
+    fixture_path(name).split('/').nth(3).unwrap().to_owned()
+}
+
+fn assert_invalid(err: &Error, needle: &str) {
+    assert!(
+        matches!(err, Error::Invalid(m) if m.contains(needle)),
+        "{err:?}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn temporal_stale_query_and_shaping() {
+    let srv = FakeServer::start(vec![
+        Step::get("/v1/temporal/stale?days=0&limit=2&namespace=ops")
+            .fixture("temporal_stale_params"),
+        Step::get("/v1/temporal/stale").fixture("temporal_stale"),
+    ]);
+    let a = app(&srv);
+    let out = a
+        .temporal_stale(TemporalListArgs {
+            days: Some(0),
+            limit: Some(2),
+            namespace: Some(s("ops")),
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["count"], 2);
+    assert_eq!(out["memories"][0]["created_at_iso"], "2026-08-01T17:14:48Z");
+    assert!(out["memories"][0].get("due_at").is_none(), "null pruned");
+    a.temporal_stale(TemporalListArgs::default()).await.unwrap();
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn temporal_upcoming_query() {
+    let srv = FakeServer::start(vec![
+        Step::get("/v1/temporal/upcoming?days=30&namespace=ops").fixture("temporal_upcoming"),
+    ]);
+    let out = app(&srv)
+        .temporal_upcoming(TemporalListArgs {
+            days: Some(30),
+            limit: None,
+            namespace: Some(s("ops")),
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["count"], 0);
+    srv.assert_done();
+}
+
+fn as_of_args(at: &str) -> TemporalAsOfArgs {
+    TemporalAsOfArgs {
+        query: s("ledger migration"),
+        at: s(at),
+        ..TemporalAsOfArgs::default()
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn temporal_as_of_sends_unix_seconds() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/temporal/as_of").fixture("temporal_as_of"),
+        Step::post("/v1/temporal/as_of").fixture("temporal_as_of_empty"),
+        Step::post("/v1/temporal/as_of").fixture("temporal_as_of_empty"),
+    ]);
+    let a = app(&srv);
+    let out = a
+        .temporal_as_of(TemporalAsOfArgs {
+            top_k: Some(2),
+            namespace: Some(s("ops")),
+            memory_type: Some(MemoryType::Episodic),
+            ..as_of_args("4000000000")
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["count"], 2);
+    a.temporal_as_of(as_of_args("2026-01-02")).await.unwrap();
+    a.temporal_as_of(as_of_args("2026-01-02T01:00:00+01:00"))
+        .await
+        .unwrap();
+    srv.assert_done();
+    let reqs = srv.requests();
+    let b = &reqs[0].body;
+    assert_eq!(b["as_of"], 4_000_000_000.0);
+    assert_eq!(b["query"], "ledger migration");
+    assert_eq!(b["top_k"], 2);
+    assert_eq!(b["namespace"], "ops");
+    assert_eq!(b["memory_type"], "episodic");
+    assert_eq!(reqs[1].body["as_of"], 1_767_312_000.0);
+    assert!(reqs[1].body.get("top_k").is_none());
+    assert_eq!(reqs[2].body["as_of"], 1_767_312_000.0);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn temporal_as_of_validation() {
+    let srv = FakeServer::start(vec![]);
+    let a = app(&srv);
+    let err = a
+        .temporal_as_of(TemporalAsOfArgs {
+            query: s("  "),
+            ..as_of_args("2026-01-02")
+        })
+        .await
+        .unwrap_err();
+    assert_invalid(&err, "query");
+    let err = a
+        .temporal_as_of(TemporalAsOfArgs {
+            top_k: Some(0),
+            ..as_of_args("2026-01-02")
+        })
+        .await
+        .unwrap_err();
+    assert_invalid(&err, "top_k");
+    let err = a.temporal_as_of(as_of_args("yesterday")).await.unwrap_err();
+    assert_invalid(&err, "time `yesterday`");
+    assert!(srv.calls().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn temporal_as_of_server_errors() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/temporal/as_of").fixture("temporal_as_of_topk_cap"),
+        Step::post("/v1/temporal/as_of").fixture("temporal_as_of_missing_query"),
+    ]);
+    let a = app(&srv);
+    let err = a
+        .temporal_as_of(TemporalAsOfArgs {
+            top_k: Some(100_000),
+            ..as_of_args("4000000000")
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Http { status: 400, .. }), "{err:?}");
+    let err = a
+        .temporal_as_of(as_of_args("4000000000"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Http { status: 400, .. }), "{err:?}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn trigger_list_and_history_queries() {
+    let srv = FakeServer::start(vec![
+        Step::get("/v1/triggers").fixture("triggers"),
+        Step::get("/v1/triggers?limit=1").fixture("triggers_limit"),
+        Step::get("/v1/triggers/history?limit=5").fixture("triggers_history"),
+        Step::get("/v1/triggers/history?trigger_type=decay_review")
+            .fixture("triggers_history_filtered"),
+    ]);
+    let a = app(&srv);
+    let out = a.trigger_list(TriggerListArgs::default()).await.unwrap();
+    assert_eq!(out["count"], 2);
+    assert!(out["triggers"][0]["created_at_iso"].is_string());
+    let out = a
+        .trigger_list(TriggerListArgs { limit: Some(1) })
+        .await
+        .unwrap();
+    assert_eq!(out["count"], 1);
+    let out = a
+        .trigger_history(TriggerHistoryArgs {
+            limit: Some(5),
+            trigger_type: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["count"], 2);
+    let out = a
+        .trigger_history(TriggerHistoryArgs {
+            limit: None,
+            trigger_type: Some(s("decay_review")),
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["count"], 1);
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn trigger_actions_post_to_the_action_path() {
+    let srv = FakeServer::start(vec![
+        Step::post(&fixture_path("trigger_deliver")).fixture("trigger_deliver"),
+        Step::post(&fixture_path("trigger_acknowledge")).fixture("trigger_acknowledge"),
+        Step::post(&fixture_path("trigger_act")).fixture("trigger_act"),
+        Step::post(&fixture_path("trigger_dismiss")).fixture("trigger_dismiss"),
+    ]);
+    let a = app(&srv);
+    let id = |name: &str| TriggerActionArgs {
+        id: trigger_id(name),
+    };
+    let out = a.trigger_deliver(id("trigger_deliver")).await.unwrap();
+    assert_eq!(out["action"], "deliver");
+    assert_eq!(out["changed"], true);
+    let out = a
+        .trigger_acknowledge(id("trigger_acknowledge"))
+        .await
+        .unwrap();
+    assert_eq!(out["action"], "acknowledge");
+    let out = a.trigger_act(id("trigger_act")).await.unwrap();
+    assert_eq!(out["action"], "act");
+    let out = a.trigger_dismiss(id("trigger_dismiss")).await.unwrap();
+    assert_eq!(out["action"], "dismiss");
+    srv.assert_done();
+    assert!(srv.requests().iter().all(|r| r.body == json!({})));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn trigger_action_encodes_id_and_maps_errors() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/triggers/a%2Fb/act").json(json!({"changed": true})),
+        Step::post(&fixture_path("trigger_act_404")).fixture("trigger_act_404"),
+    ]);
+    let a = app(&srv);
+    a.trigger_act(TriggerActionArgs { id: s("a/b") })
+        .await
+        .unwrap();
+    let err = a
+        .trigger_act(TriggerActionArgs {
+            id: trigger_id("trigger_act_404"),
+        })
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&err, Error::NotFound(m) if m.contains("not found or not in a state")),
+        "{err:?}"
+    );
+    let err = a
+        .trigger_dismiss(TriggerActionArgs { id: s(" ") })
+        .await
+        .unwrap_err();
+    assert_invalid(&err, "id");
+    srv.assert_done();
+}
+
+fn claim_args() -> ClaimAddArgs {
+    ClaimAddArgs {
+        src: s("Bob"),
+        rel_type: s("reviews"),
+        dst: s("Zephyr ledger migration"),
+        ..ClaimAddArgs::default()
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn claim_add_full_and_minimal() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/claim").fixture("claim"),
+        Step::post("/v1/claim").fixture("claim_minimal"),
+    ]);
+    let a = app(&srv);
+    let out = a
+        .claim_add(ClaimAddArgs {
+            namespace: Some(s("ops")),
+            polarity: Some(-1),
+            modality: Some(s("asserted")),
+            valid_from: Some(s("1790000000")),
+            valid_to: Some(s("2026-12-31")),
+            confidence_band: Some(s("high")),
+            source_memory_rid: Some(s("01a18dcf-1ebd-78ea-9981-9fabefe5fc93")),
+            weight: Some(0.8),
+            ..claim_args()
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["claim_id"], "01a18dcf-1ed2-7ef7-9ef2-124133e63777");
+    a.claim_add(claim_args()).await.unwrap();
+    srv.assert_done();
+    let reqs = srv.requests();
+    let b = &reqs[0].body;
+    assert_eq!(b["src"], "Bob");
+    assert_eq!(b["rel_type"], "reviews");
+    assert_eq!(b["dst"], "Zephyr ledger migration");
+    assert_eq!(b["namespace"], "ops");
+    assert_eq!(b["polarity"], -1);
+    assert_eq!(b["modality"], "asserted");
+    assert_eq!(b["valid_from"], 1_790_000_000.0);
+    assert_eq!(b["valid_to"], 1_798_675_200.0);
+    assert_eq!(b["confidence_band"], "high");
+    assert_eq!(
+        b["source_memory_rid"],
+        "01a18dcf-1ebd-78ea-9981-9fabefe5fc93"
+    );
+    assert_eq!(b["weight"], 0.8);
+    assert_eq!(
+        reqs[1].body,
+        json!({"src": "Bob", "rel_type": "reviews", "dst": "Zephyr ledger migration"})
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn claim_add_validation() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/claim")
+            .body(|b| b["weight"] == 1.0)
+            .json(json!({"claim_id": "c"})),
+    ]);
+    let a = app(&srv);
+    for (args, needle) in [
+        (
+            ClaimAddArgs {
+                src: s(" "),
+                ..claim_args()
+            },
+            "src",
+        ),
+        (
+            ClaimAddArgs {
+                rel_type: s(""),
+                ..claim_args()
+            },
+            "rel_type",
+        ),
+        (
+            ClaimAddArgs {
+                dst: s(""),
+                ..claim_args()
+            },
+            "dst",
+        ),
+        (
+            ClaimAddArgs {
+                weight: Some(f64::NAN),
+                ..claim_args()
+            },
+            "weight",
+        ),
+        (
+            ClaimAddArgs {
+                valid_from: Some(s("2026-02-01")),
+                valid_to: Some(s("2026-01-01")),
+                ..claim_args()
+            },
+            "later than",
+        ),
+        (
+            ClaimAddArgs {
+                valid_to: Some(s("never")),
+                ..claim_args()
+            },
+            "time `never`",
+        ),
+    ] {
+        assert_invalid(&a.claim_add(args).await.unwrap_err(), needle);
+    }
+    assert!(srv.calls().is_empty());
+    a.claim_add(ClaimAddArgs {
+        weight: Some(5.0),
+        valid_from: Some(s("2026-01-01")),
+        valid_to: Some(s("2026-01-01")),
+        ..claim_args()
+    })
+    .await
+    .unwrap();
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn claim_list_queries() {
+    let srv = FakeServer::start(vec![
+        Step::get("/v1/claims?entity=Bob&namespace=ops").fixture("claims"),
+        Step::get("/v1/claims?entity=Carol").fixture("claims_default_ns"),
+        Step::get("/v1/claims?entity=Nobody").fixture("claims_empty"),
+    ]);
+    let a = app(&srv);
+    let out = a
+        .claim_list(ClaimListArgs {
+            entity: s("Bob"),
+            namespace: Some(s("ops")),
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["claims"][0]["src"], "Bob");
+    assert!(out["claims"][0]["created_at_iso"].is_string());
+    let out = a
+        .claim_list(ClaimListArgs {
+            entity: s("Carol"),
+            namespace: None,
+        })
+        .await
+        .unwrap();
+    assert!(!out["claims"].as_array().unwrap().is_empty());
+    let out = a
+        .claim_list(ClaimListArgs {
+            entity: s("Nobody"),
+            namespace: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["claims"], json!([]));
+    let err = a
+        .claim_list(ClaimListArgs {
+            entity: s(" "),
+            namespace: None,
+        })
+        .await
+        .unwrap_err();
+    assert_invalid(&err, "entity");
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn procedure_surface_body_and_validation() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/procedures/surface").fixture("procedures_surface"),
+        Step::post("/v1/procedures/surface").fixture("procedures_surface_unrelated"),
+        Step::post("/v1/procedures/surface").fixture("procedures_surface_missing"),
+    ]);
+    let a = app(&srv);
+    let out = a
+        .procedure_surface(ProcedureSurfaceArgs {
+            query: s("roll back a deploy"),
+            top_k: Some(3),
+            domain: Some(s("deploy")),
+            namespace: Some(s("ops")),
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["count"], 1);
+    a.procedure_surface(ProcedureSurfaceArgs {
+        query: s("quantum gardening"),
+        ..ProcedureSurfaceArgs::default()
+    })
+    .await
+    .unwrap();
+    let err = a
+        .procedure_surface(ProcedureSurfaceArgs {
+            query: s("x"),
+            ..ProcedureSurfaceArgs::default()
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Http { status: 400, .. }), "{err:?}");
+    srv.assert_done();
+    let reqs = srv.requests();
+    assert_eq!(
+        reqs[0].body,
+        json!({"query": "roll back a deploy", "top_k": 3, "domain": "deploy", "namespace": "ops"})
+    );
+    assert_eq!(reqs[1].body, json!({"query": "quantum gardening"}));
+
+    let srv = FakeServer::start(vec![]);
+    let a = app(&srv);
+    assert_invalid(
+        &a.procedure_surface(ProcedureSurfaceArgs::default())
+            .await
+            .unwrap_err(),
+        "query",
+    );
+    assert_invalid(
+        &a.procedure_surface(ProcedureSurfaceArgs {
+            query: s("x"),
+            top_k: Some(0),
+            ..ProcedureSurfaceArgs::default()
+        })
+        .await
+        .unwrap_err(),
+        "top_k",
+    );
+    assert!(srv.calls().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn task_list_queries() {
+    let srv = FakeServer::start(vec![
+        Step::get("/v1/tasks").fixture("tasks"),
+        Step::get("/v1/tasks?namespace=ops&status=pending").fixture("tasks_filtered"),
+    ]);
+    let a = app(&srv);
+    let out = a.task_list(TaskListArgs::default()).await.unwrap();
+    assert_eq!(out["count"], 0);
+    let out = a
+        .task_list(TaskListArgs {
+            namespace: Some(s("ops")),
+            status: Some(s("pending")),
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["tasks"], json!([]));
+    srv.assert_done();
 }

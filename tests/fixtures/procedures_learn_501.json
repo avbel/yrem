@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/procedures",
+  "request": {
+    "text": "x"
+  },
+  "response": {
+    "deferred": true,
+    "error": "not_yet_available_over_http",
+    "operation": "procedure.learn",
+    "reason": "This is a cluster-global write with no replication path yet; exposing it as a direct engine call would silently diverge across the cluster. Available in embedded (single-node) mode; replicated HTTP support is tracked in RFC 032."
+  },
+  "status": 501
+}

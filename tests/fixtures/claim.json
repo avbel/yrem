@@ -1,0 +1,24 @@
+{
+  "method": "POST",
+  "path": "/v1/claim",
+  "request": {
+    "confidence_band": "high",
+    "dst": "Zephyr ledger migration",
+    "extractor": "manual",
+    "modality": "asserted",
+    "namespace": "ops",
+    "polarity": 1,
+    "rel_type": "reviews",
+    "source_memory_rid": "01a18dcf-1ebd-78ea-9981-9fabefe5fc93",
+    "span_end": 5,
+    "span_start": 0,
+    "src": "Bob",
+    "valid_from": 1790000000.0,
+    "weight": 0.8
+  },
+  "response": {
+    "claim_id": "01a18dcf-1ed2-7ef7-9ef2-124133e63777",
+    "namespace": "ops"
+  },
+  "status": 200
+}

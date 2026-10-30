@@ -1,0 +1,57 @@
+{
+  "method": "GET",
+  "path": "/v1/temporal/stale?namespace=ops&days=0&limit=2",
+  "request": null,
+  "response": {
+    "count": 2,
+    "memories": [
+      {
+        "access_count": 0,
+        "certainty": 1.0,
+        "consolidated_into": null,
+        "consolidation_status": "active",
+        "created_at": 1785604488.309922,
+        "domain": "",
+        "due_at": null,
+        "emotional_state": null,
+        "half_life": 24.0,
+        "importance": 0.9,
+        "last_access": 1785604488.309922,
+        "memory_type": "semantic",
+        "metadata": {},
+        "namespace": "ops",
+        "rid": "01a18dce-9493-7ab3-a1fb-9218c0ffec13",
+        "session_id": null,
+        "source": "user",
+        "storage_tier": "hot",
+        "temporal_kind": null,
+        "text": "Old retention policy note for the Zephyr archive",
+        "valence": 0.0
+      },
+      {
+        "access_count": 0,
+        "certainty": 1.0,
+        "consolidated_into": null,
+        "consolidation_status": "active",
+        "created_at": 1793380488.343193,
+        "domain": "deploy",
+        "due_at": null,
+        "emotional_state": null,
+        "half_life": 168.0,
+        "importance": 0.9,
+        "last_access": 1793380488.343193,
+        "memory_type": "procedural",
+        "metadata": {},
+        "namespace": "ops",
+        "rid": "01a18dce-9497-7bf0-a9df-d0e23201f4bd",
+        "session_id": null,
+        "source": "user",
+        "storage_tier": "hot",
+        "temporal_kind": null,
+        "text": "Procedure: to roll back a deploy, drain the queue then redeploy the previous tag",
+        "valence": 0.0
+      }
+    ]
+  },
+  "status": 200
+}

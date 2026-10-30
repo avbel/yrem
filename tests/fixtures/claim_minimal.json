@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/claim",
+  "request": {
+    "dst": "Zephyr budget",
+    "rel_type": "approves",
+    "src": "Carol"
+  },
+  "response": {
+    "claim_id": "01a18dcf-1ed5-71ec-b8c5-a1b85ee461c3",
+    "namespace": "default"
+  },
+  "status": 200
+}

@@ -1,0 +1,15 @@
+{
+  "method": "POST",
+  "path": "/v1/claim",
+  "request": {
+    "dst": "x",
+    "src": "a"
+  },
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing 'rel_type'"
+    }
+  },
+  "status": 400
+}

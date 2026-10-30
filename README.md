@@ -194,11 +194,25 @@ yrem conflict dismiss <conflict-id>
 yrem digest                         # alias of `yrem session digest`
 yrem session digest --include-gaps
 
+# Time, triggers, claims, procedures, tasks (CLI-only, no MCP tools)
+yrem temporal stale --days 30 --limit 20 --namespace payments
+yrem temporal upcoming --days 7
+yrem temporal as-of "which database does payments use" --at 2026-01-01 --top-k 5
+yrem trigger list
+yrem trigger history --trigger-type decay_review --limit 10
+yrem trigger deliver <trigger-id>      # also: acknowledge, act, dismiss
+yrem claim add payments uses postgres --valid-from 2026-01-01 --confidence-band high
+yrem claim list payments
+yrem procedure surface "roll back a deploy" --domain deploy
+yrem task list --status pending
+
 # Pipe into jq
 yrem recall "on-call rotation" | jq -r '.results[] | "\(.score)\t\(.text)"'
 ```
 
 Output is pretty-printed on a terminal and compact when piped. Override with `--pretty` / `--compact`.
+
+The `temporal`, `trigger`, `claim`, `procedure` and `task` commands exist on the command line only; they have no MCP tools, and `yrem call` does not run them.
 
 `yrem <command> --help` lists every argument with its type and description. The text comes from the same doc comments that become the MCP schema descriptions.
 
@@ -287,7 +301,7 @@ git config core.hooksPath .githooks   # once per clone: cargo fmt --check + clip
 cargo fmt
 cargo clippy --all-targets -- -D warnings
 cargo test
-cargo llvm-cov --all-features --fail-under-lines 97 --fail-under-regions 95
+cargo llvm-cov --all-features --fail-under-lines 98 --fail-under-regions 96
 YREM_CONTRACT=1 YREM_URL=http://localhost:7438 YREM_TOKEN=... cargo test --test contract
 ```
 

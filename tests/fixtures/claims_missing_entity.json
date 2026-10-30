@@ -1,0 +1,12 @@
+{
+  "method": "GET",
+  "path": "/v1/claims",
+  "request": null,
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing 'entity' query parameter"
+    }
+  },
+  "status": 400
+}

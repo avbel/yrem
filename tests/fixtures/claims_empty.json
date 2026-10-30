@@ -1,0 +1,9 @@
+{
+  "method": "GET",
+  "path": "/v1/claims?entity=Nobody",
+  "request": null,
+  "response": {
+    "claims": []
+  },
+  "status": 200
+}

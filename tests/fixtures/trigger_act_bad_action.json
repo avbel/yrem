@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "path": "/v1/triggers/01a18dce-949a-7135-a256-4e5ac3b57768/explode",
+  "request": {},
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "unknown trigger action 'explode' (acknowledge|deliver|act|dismiss)"
+    }
+  },
+  "status": 400
+}

@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "path": "/v1/temporal/as_of",
+  "request": {
+    "query": "x"
+  },
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing 'as_of' (unix seconds)"
+    }
+  },
+  "status": 400
+}

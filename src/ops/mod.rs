@@ -11,9 +11,10 @@ use serde_json::{Map, Value, json};
 pub use args::*;
 
 use crate::client::{
-    CaptureRequest, Client, ConflictsQuery, CorrectRequest, DigestQuery, ForgetRequest, GapsQuery,
-    MemoriesQuery, RecallRequest, RelateRequest, RememberRequest, ResolveRequest,
-    SessionEndRequest, SessionStartRequest, ThinkRequest,
+    AsOfRequest, CaptureRequest, ClaimRequest, ClaimsQuery, Client, ConflictsQuery, CorrectRequest,
+    DigestQuery, ForgetRequest, GapsQuery, MemoriesQuery, RecallRequest, RelateRequest,
+    RememberRequest, ResolveRequest, SessionEndRequest, SessionStartRequest, SurfaceRequest,
+    TasksQuery, TemporalQuery, ThinkRequest, TriggersQuery,
 };
 use crate::error::{Error, Result};
 use crate::output::shape;
@@ -433,6 +434,136 @@ impl App {
     pub async fn memory_stats(&self, _args: MemoryStatsArgs) -> Result<Value> {
         Ok(shape(self.client.stats().await?))
     }
+
+    pub async fn temporal_stale(&self, args: TemporalListArgs) -> Result<Value> {
+        Ok(shape(
+            self.client.temporal_stale(&temporal_query(args)).await?,
+        ))
+    }
+
+    pub async fn temporal_upcoming(&self, args: TemporalListArgs) -> Result<Value> {
+        Ok(shape(
+            self.client.temporal_upcoming(&temporal_query(args)).await?,
+        ))
+    }
+
+    pub async fn temporal_as_of(&self, mut args: TemporalAsOfArgs) -> Result<Value> {
+        if args.stdin {
+            args.query = read_stdin()?;
+        }
+        let query = non_empty("query", args.query)?;
+        if args.top_k == Some(0) {
+            return Err(Error::Invalid("`top_k` must be at least 1".into()));
+        }
+        let req = AsOfRequest {
+            query,
+            as_of: time::unix_secs(time::parse(&args.at, Utc::now())?),
+            top_k: args.top_k,
+            namespace: args.namespace,
+            memory_type: args.memory_type.map(|t| t.as_str().to_owned()),
+        };
+        Ok(shape(self.client.temporal_as_of(&req).await?))
+    }
+
+    pub async fn trigger_list(&self, args: TriggerListArgs) -> Result<Value> {
+        let q = TriggersQuery {
+            limit: args.limit,
+            trigger_type: None,
+        };
+        Ok(shape(self.client.triggers(&q).await?))
+    }
+
+    pub async fn trigger_history(&self, args: TriggerHistoryArgs) -> Result<Value> {
+        let q = TriggersQuery {
+            limit: args.limit,
+            trigger_type: args.trigger_type,
+        };
+        Ok(shape(self.client.triggers_history(&q).await?))
+    }
+
+    pub async fn trigger_deliver(&self, args: TriggerActionArgs) -> Result<Value> {
+        self.trigger_action("deliver", args).await
+    }
+
+    pub async fn trigger_acknowledge(&self, args: TriggerActionArgs) -> Result<Value> {
+        self.trigger_action("acknowledge", args).await
+    }
+
+    pub async fn trigger_act(&self, args: TriggerActionArgs) -> Result<Value> {
+        self.trigger_action("act", args).await
+    }
+
+    pub async fn trigger_dismiss(&self, args: TriggerActionArgs) -> Result<Value> {
+        self.trigger_action("dismiss", args).await
+    }
+
+    async fn trigger_action(&self, action: &str, args: TriggerActionArgs) -> Result<Value> {
+        let id = non_empty("id", args.id)?;
+        Ok(shape(self.client.trigger_action(&id, action).await?))
+    }
+
+    pub async fn claim_add(&self, args: ClaimAddArgs) -> Result<Value> {
+        let now = Utc::now();
+        let unix = |t: Option<String>| {
+            t.map(|t| time::parse(&t, now).map(time::unix_secs))
+                .transpose()
+        };
+        let (valid_from, valid_to) = (unix(args.valid_from)?, unix(args.valid_to)?);
+        if let (Some(from), Some(to)) = (valid_from, valid_to)
+            && from > to
+        {
+            return Err(Error::Invalid(
+                "`valid_from` is later than `valid_to`".into(),
+            ));
+        }
+        let req = ClaimRequest {
+            src: non_empty("src", args.src)?,
+            rel_type: non_empty("rel_type", args.rel_type)?,
+            dst: non_empty("dst", args.dst)?,
+            namespace: args.namespace,
+            polarity: args.polarity,
+            modality: args.modality,
+            valid_from,
+            valid_to,
+            confidence_band: args.confidence_band,
+            source_memory_rid: args.source_memory_rid,
+            weight: args
+                .weight
+                .map(|w| clamp("weight", w, 0.0, 1.0))
+                .transpose()?,
+        };
+        Ok(shape(self.client.claim(&req).await?))
+    }
+
+    pub async fn claim_list(&self, args: ClaimListArgs) -> Result<Value> {
+        let q = ClaimsQuery {
+            entity: non_empty("entity", args.entity)?,
+            namespace: args.namespace,
+        };
+        Ok(shape(self.client.claims(&q).await?))
+    }
+
+    pub async fn procedure_surface(&self, args: ProcedureSurfaceArgs) -> Result<Value> {
+        let query = non_empty("query", args.query)?;
+        if args.top_k == Some(0) {
+            return Err(Error::Invalid("`top_k` must be at least 1".into()));
+        }
+        let req = SurfaceRequest {
+            query,
+            top_k: args.top_k,
+            domain: args.domain,
+            namespace: args.namespace,
+        };
+        Ok(shape(self.client.procedures_surface(&req).await?))
+    }
+
+    pub async fn task_list(&self, args: TaskListArgs) -> Result<Value> {
+        let q = TasksQuery {
+            namespace: args.namespace,
+            status: args.status,
+        };
+        Ok(shape(self.client.tasks(&q).await?))
+    }
 }
 
 /// Server 0.20 sends `last_maintenance` as a JSON-encoded string; decoding it lets
@@ -447,6 +578,14 @@ fn decode_maintenance(mut digest: Value) -> Value {
         digest["last_maintenance"] = v;
     }
     digest
+}
+
+fn temporal_query(args: TemporalListArgs) -> TemporalQuery {
+    TemporalQuery {
+        days: args.days,
+        limit: args.limit,
+        namespace: args.namespace,
+    }
 }
 
 fn remember_request(m: MemoryInput, now: chrono::DateTime<Utc>) -> Result<RememberRequest> {

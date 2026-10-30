@@ -333,3 +333,120 @@ pub struct MemoryGapsArgs {
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryStatsArgs {}
+
+#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TemporalListArgs {
+    /// Window in days.
+    #[arg(long)]
+    pub days: Option<u32>,
+    #[arg(long)]
+    pub limit: Option<u32>,
+    #[arg(long)]
+    pub namespace: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TemporalAsOfArgs {
+    #[arg(default_value = "", hide_default_value = true)]
+    pub query: String,
+    /// Time or span back from now (7d).
+    #[arg(long)]
+    pub at: String,
+    #[arg(long)]
+    #[schemars(range(min = 1, max = 1000))]
+    pub top_k: Option<u32>,
+    #[arg(long)]
+    pub namespace: Option<String>,
+    #[arg(long, value_enum)]
+    pub memory_type: Option<MemoryType>,
+    /// Read the query from stdin.
+    #[arg(long)]
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub stdin: bool,
+}
+
+#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TriggerListArgs {
+    #[arg(long)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TriggerHistoryArgs {
+    #[arg(long)]
+    pub limit: Option<u32>,
+    /// e.g. `decay_review`.
+    #[arg(long)]
+    pub trigger_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TriggerActionArgs {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimAddArgs {
+    pub src: String,
+    /// e.g. uses, owns.
+    pub rel_type: String,
+    pub dst: String,
+    #[arg(long)]
+    pub namespace: Option<String>,
+    /// 1 asserts, -1 negates.
+    #[arg(long, allow_negative_numbers = true)]
+    pub polarity: Option<i32>,
+    /// e.g. asserted.
+    #[arg(long)]
+    pub modality: Option<String>,
+    /// Time or span back from now (7d).
+    #[arg(long)]
+    pub valid_from: Option<String>,
+    #[arg(long)]
+    pub valid_to: Option<String>,
+    /// e.g. low, medium, high.
+    #[arg(long)]
+    pub confidence_band: Option<String>,
+    #[arg(long)]
+    pub source_memory_rid: Option<String>,
+    #[arg(long)]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub weight: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ClaimListArgs {
+    pub entity: String,
+    #[arg(long)]
+    pub namespace: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProcedureSurfaceArgs {
+    pub query: String,
+    #[arg(long)]
+    #[schemars(range(min = 1, max = 1000))]
+    pub top_k: Option<u32>,
+    #[arg(long)]
+    pub domain: Option<String>,
+    #[arg(long)]
+    pub namespace: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TaskListArgs {
+    #[arg(long)]
+    pub namespace: Option<String>,
+    #[arg(long)]
+    pub status: Option<String>,
+}

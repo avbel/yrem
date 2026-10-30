@@ -1,0 +1,15 @@
+{
+  "method": "POST",
+  "path": "/v1/claim",
+  "request": {
+    "rel_type": "owns",
+    "src": "a"
+  },
+  "response": {
+    "error": {
+      "code": "generic",
+      "message": "missing 'dst'"
+    }
+  },
+  "status": 400
+}

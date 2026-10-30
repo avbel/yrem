@@ -161,6 +161,112 @@ async fn lifecycle() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn v02_endpoints() {
+    let Some(app) = app() else { return };
+    let ns = format!("yrem-contract-v02-{}", std::process::id());
+
+    let old = app
+        .remember(call(json!({
+            "text": "The v02 contract ledger runbook lives in the archive",
+            "namespace": ns, "created_at": "2026-01-02"
+        })))
+        .await
+        .unwrap();
+    let procedure = app
+        .remember(call(json!({
+            "text": "To roll back a v02 contract deploy, redeploy the previous tag",
+            "namespace": ns, "memory_type": "procedural", "domain": "deploy"
+        })))
+        .await
+        .unwrap();
+    assert!(old["rid"].is_string() && procedure["rid"].is_string());
+
+    let stale = app
+        .temporal_stale(TemporalListArgs {
+            days: Some(0),
+            limit: Some(10),
+            namespace: Some(ns.clone()),
+        })
+        .await
+        .unwrap();
+    assert!(stale["count"].as_u64().unwrap() >= 2, "{stale}");
+    let upcoming = app
+        .temporal_upcoming(TemporalListArgs {
+            namespace: Some(ns.clone()),
+            ..TemporalListArgs::default()
+        })
+        .await
+        .unwrap();
+    assert!(upcoming["count"].is_u64(), "{upcoming}");
+
+    let before = app
+        .temporal_as_of(call(json!({
+            "query": "ledger runbook", "at": "2025-01-01", "namespace": ns
+        })))
+        .await
+        .unwrap();
+    assert_eq!(before["count"], 0, "{before}");
+    let after = app
+        .temporal_as_of(call(json!({
+            "query": "ledger runbook", "at": "1h", "namespace": ns, "top_k": 5
+        })))
+        .await
+        .unwrap();
+    assert!(after["count"].as_u64().unwrap() >= 1, "{after}");
+
+    let triggers = app.trigger_list(TriggerListArgs::default()).await.unwrap();
+    assert!(triggers["triggers"].is_array(), "{triggers}");
+    let history = app
+        .trigger_history(TriggerHistoryArgs::default())
+        .await
+        .unwrap();
+    assert!(history["triggers"].is_array(), "{history}");
+
+    let claim = app
+        .claim_add(call(json!({
+            "src": "contract-bob", "rel_type": "reviews", "dst": "contract-ledger",
+            "namespace": ns, "valid_from": "2026-01-01", "weight": 0.8,
+            "confidence_band": "high"
+        })))
+        .await
+        .unwrap();
+    assert!(claim["claim_id"].is_string(), "{claim}");
+    let claims = app
+        .claim_list(ClaimListArgs {
+            entity: "contract-bob".into(),
+            namespace: Some(ns.clone()),
+        })
+        .await
+        .unwrap();
+    assert_eq!(claims["claims"][0]["dst"], "contract-ledger", "{claims}");
+
+    let surfaced = app
+        .procedure_surface(call(json!({
+            "query": "roll back a deploy", "namespace": ns, "domain": "deploy", "top_k": 3
+        })))
+        .await
+        .unwrap();
+    assert!(surfaced["count"].as_u64().unwrap() >= 1, "{surfaced}");
+
+    let tasks = app
+        .task_list(TaskListArgs {
+            namespace: Some(ns.clone()),
+            ..TaskListArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(tasks["count"], 0, "{tasks}");
+
+    let missing = app
+        .trigger_act(TriggerActionArgs {
+            id: "00000000-0000-7000-8000-000000000000".into(),
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(missing, Error::NotFound(_)), "{missing}");
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn errors() {
     let Some(app) = app() else { return };
     let missing = app
