@@ -1,0 +1,42 @@
+Semantic search over memories
+
+Usage: yrem recall [OPTIONS] [QUERY]
+
+Arguments:
+  [QUERY]  
+
+Options:
+      --top-k <TOP_K>
+          
+      --url <URL>
+          Server URL [env: YREM_URL=]
+      --namespace <NAMESPACE>
+          
+      --token <TOKEN>
+          Database token [env: YREM_TOKEN]
+      --config <CONFIG>
+          Config file [env: YREM_CONFIG=]
+      --domain <DOMAIN>
+          
+      --memory-type <MEMORY_TYPE>
+          [possible values: semantic, episodic, procedural]
+      --pretty
+          Pretty-print JSON
+      --compact
+          Compact JSON
+      --since <SINCE>
+          Time or span back from now (7d)
+      --until <UNTIL>
+          
+      --min-score-ratio <MIN_SCORE_RATIO>
+          Drop hits below this fraction of the top score
+      --order <ORDER>
+          [possible values: relevance, recency, certainty, first_mention]
+      --refine-exclude <REFINE_EXCLUDE>...
+          Rids to drop from results
+      --stdin
+          Read the query from stdin
+  -h, --help
+          Print help
+  -V, --version
+          Print version

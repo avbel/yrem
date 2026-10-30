@@ -27,6 +27,19 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
       - run: cargo fmt --check
 
+  windows:
+    name: windows build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy --locked
+      - name: Build
+        run: cargo build --locked
+
   test:
     name: ${{ matrix.os }} ${{ matrix.features || 'default' }}
     runs-on: ${{ matrix.os }}
@@ -43,7 +56,7 @@ jobs:
         with:
           key: ${{ matrix.features }}
       - name: Clippy
-        run: cargo clippy --all-targets ${{ matrix.features }}
+        run: cargo clippy --all-targets --locked ${{ matrix.features }} -- -D warnings
       - name: Test
         run: cargo test --locked ${{ matrix.features }}
 
@@ -61,7 +74,7 @@ jobs:
       - name: Coverage gate
         run: >
           cargo llvm-cov --all-features --locked
-          --fail-under-lines 95 --fail-under-regions 90
+          --fail-under-lines 97 --fail-under-regions 95
           --lcov --output-path lcov.info
       - name: Per-file summary
         if: ${{ !cancelled() }}

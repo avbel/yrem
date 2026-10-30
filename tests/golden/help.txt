@@ -1,0 +1,28 @@
+Remote-only CLI and MCP server for yantrikdb-server
+
+Usage: yrem [OPTIONS] <COMMAND>
+
+Commands:
+  remember  Store a durable fact
+  recall    Semantic search over memories
+  forget    Delete a memory by rid
+  correct   Replace a stored fact that changed
+  think     Consolidate memories and detect conflicts
+  graph     Entity graph
+  conflict  Conflicts between stored facts
+  session   Session briefing, capture and tracking
+  memory    Inspect stored memories
+  digest    Session-start briefing (alias of `session digest`)
+  call      Run an MCP tool with raw JSON arguments
+  doctor    Check config, connectivity, auth and server capabilities
+  mcp       Run the MCP server on stdio
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+      --url <URL>        Server URL [env: YREM_URL=]
+      --token <TOKEN>    Database token [env: YREM_TOKEN]
+      --config <CONFIG>  Config file [env: YREM_CONFIG=]
+      --pretty           Pretty-print JSON
+      --compact          Compact JSON
+  -h, --help             Print help
+  -V, --version          Print version

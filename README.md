@@ -28,7 +28,9 @@ cargo install --locked --git https://github.com/avbel/yrem
 cargo install --locked --git https://github.com/avbel/yrem --features tls
 ```
 
-Prebuilt binaries (macOS arm64, Linux x86_64/aarch64 musl) and a Homebrew tap ship with the first release.
+Prebuilt binaries are attached to each [GitHub release](https://github.com/avbel/yrem/releases): Linux x86_64 / aarch64 (static musl, `.tar.gz`), macOS arm64 (`.tar.gz`), Windows x86_64 / arm64 (`.zip`), each with a `.sha256`. They are built without TLS.
+
+`yrem --version` prints the version from `Cargo.toml`.
 
 ## Configure
 
@@ -288,12 +290,17 @@ These are not exposed because the server has no replicated path for them yet (50
 ## Development
 
 ```bash
+git config core.hooksPath .githooks   # once per clone: cargo fmt --check + clippy before each commit
+cargo fmt
+cargo clippy --all-targets -- -D warnings
 cargo test
-cargo llvm-cov --all-features --fail-under-lines 95 --fail-under-regions 90
+cargo llvm-cov --all-features --fail-under-lines 97 --fail-under-regions 95
 YREM_CONTRACT=1 YREM_URL=http://localhost:7438 YREM_TOKEN=... cargo test --test contract
 ```
 
 The toolchain is pinned in `rust-toolchain.toml`. Tests replay fixtures captured from a scratch database through a fake HTTP server. MCP tests drive `yrem mcp` with the rmcp client. Regenerate golden files with `YREM_BLESS=1 cargo test`.
+
+CI runs `cargo fmt --check`, clippy (warnings are errors), tests on Linux and macOS (plain and `--features tls`), a Windows build, the coverage gate and `cargo deny`. Pushing a tag `vX.Y.Z` that matches the `Cargo.toml` version builds the release archives and publishes a GitHub release.
 
 ## License
 

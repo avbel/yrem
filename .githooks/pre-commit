@@ -1,0 +1,8 @@
+#!/bin/sh
+# Enable once per clone: git config core.hooksPath .githooks
+set -e
+if ! cargo fmt --check; then
+    echo "pre-commit: formatting differs; run 'cargo fmt'" >&2
+    exit 1
+fi
+cargo clippy --all-targets --locked --quiet -- -D warnings

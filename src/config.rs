@@ -151,8 +151,12 @@ fn read_file(path: &Path, explicit: bool) -> anyhow::Result<Option<FileConfig>> 
 }
 
 fn run_token_cmd(cmd: &str) -> anyhow::Result<String> {
-    let out = Command::new("sh")
-        .arg("-c")
+    let (shell, flag) = cfg_select! {
+        windows => { ("cmd", "/C") }
+        _ => { ("sh", "-c") }
+    };
+    let out = Command::new(shell)
+        .arg(flag)
         .arg(cmd)
         .output()
         .context("running token_cmd")?;

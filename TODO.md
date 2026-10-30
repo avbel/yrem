@@ -325,9 +325,9 @@ Toolchain 1.99.1, edition 2024. Use:
 
 Rule: every module ships with its tests in the same PR. A PR that lowers coverage fails CI.
 
-- [ ] **Coverage gate:** cargo-llvm-cov 0.9.1, `cargo llvm-cov --all-features --fail-under-lines 95 --fail-under-regions 90`.
-  - [ ] lcov artifact + a per-file table in the job summary. No third-party coverage service.
-  - [ ] Ratchet the floor up as coverage grows; never down.
+- [x] **Coverage gate:** cargo-llvm-cov 0.9.1, `cargo llvm-cov --all-features --fail-under-lines 97 --fail-under-regions 95`.
+  - [x] lcov artifact + a per-file table in the job summary. No third-party coverage service.
+  - [ ] Ratchet the floor up as coverage grows; never down. (Raised to 97 / 95; measured 98.6 % lines, 97.0 % regions.)
 - [ ] **Mutation testing:** cargo-mutants 27.1.0, weekly scheduled job. Surviving mutants in `ops`, `error`, `mcp` and `time` get an issue each. Target: zero survivors in those modules.
 - [x] **Test support:**
   - [x] `tests/support/fake_server.rs`: a `tokio::net::TcpListener` task with a scripted queue of (expected method, path, auth, body matcher) → (status, fixture, optional delay) pairs. It records every request so tests can assert which calls happened and which did not.
@@ -339,20 +339,20 @@ Rule: every module ships with its tests in the same PR. A PR that lowers coverag
   - [x] user agent
 - [x] **config:** precedence matrix (flag / env / fallback env / file / `token_cmd`); unknown keys rejected; missing config; `token_cmd` failure and non-UTF-8 output.
 - [x] **time:** table-driven tests: RFC 3339 with offsets, date-only, unix, `7d` / `12h` / `30m`, invalid inputs, `since > until`.
-- [ ] **ops (every operation):**
-  - [ ] happy path against fixtures
-  - [ ] every validation error
-  - [ ] output shaping (rounding, ISO, null pruning)
+- [x] **ops (every operation):**
+  - [x] happy path against fixtures
+  - [x] every validation error
+  - [x] output shaping (rounding, ISO, null pruning)
 - [x] **schema/args drift:** for every args struct, assert:
   - [x] the schemars schema's properties = the serde field names = the clap arg ids (minus the documented CLI-only / MCP-only fields)
   - [x] `clap::Command::debug_assert()` passes
-- [ ] **recall:** each filter (`time_window`, `min_score_ratio`, `order`, `refine_exclude`) with its `filtered_by_*` count.
-- [ ] **correct:** one test per path:
-  - [ ] native 2xx
-  - [ ] 501 → emulated success: assert the request order get → remember → forget, and the carried fields + metadata
-  - [ ] GET 404: assert no remember or forget was sent
-  - [ ] remember fails: assert no forget was sent
-  - [ ] forget fails: `PartialCorrect` with both rids, exit code 6
+- [x] **recall:** each filter (`time_window`, `min_score_ratio`, `order`, `refine_exclude`) with its `filtered_by_*` count.
+- [x] **correct:** one test per path:
+  - [x] native 2xx
+  - [x] 501 → emulated success: assert the request order get → remember → forget, and the carried fields + metadata
+  - [x] GET 404: assert no remember or forget was sent
+  - [x] remember fails: assert no forget was sent
+  - [x] forget fails: `PartialCorrect` with both rids, exit code 6
 - [x] **mcp** (rmcp client over `TokioChildProcess` spawning `yrem mcp`):
   - [x] `tools/list` golden + token budgets (instructions ≤ 150, `tools/list` ≤ 2,000)
   - [x] each tool's success and `isError` paths
@@ -360,18 +360,21 @@ Rule: every module ships with its tests in the same PR. A PR that lowers coverag
   - [x] concurrent calls
   - [x] both protocol eras (`initialize` flow and `server/discover` flow)
   - [x] stdout carries only JSON-RPC frames
-- [ ] **cli:**
-  - [ ] every command against the fake server via `std::process::Command` on `env!("CARGO_BIN_EXE_yrem")`
-  - [ ] `--stdin`, `yrem call`
-  - [ ] TTY vs pipe output (via `script` on unix)
-  - [ ] every exit code
-  - [ ] `--help` snapshot
-  - [ ] `digest --hook` truncation at a multi-byte boundary
-  - [ ] `digest --hook` with the server down: empty stdout, exit 0
+- [x] **cli:**
+  - [x] every command against the fake server via `std::process::Command` on `env!("CARGO_BIN_EXE_yrem")`
+  - [x] `--stdin`, `yrem call`
+  - [x] TTY vs pipe output (via `script` on unix)
+  - [x] every exit code
+  - [x] `--help` snapshot
+  - [x] `digest --hook` truncation at a multi-byte boundary
+  - [x] `digest --hook` with the server down: empty stdout, exit 0
 - [ ] **Contract CI job:** docker compose with `yantrikdb-server` pinned to the NAS version; bootstrap a scratch database and token; run the suite with `YREM_CONTRACT=1`. This job also records whether `/v1/correct` is still 501.
 - [ ] **Nightly contract job** against the latest server release to catch API drift. On failure it opens an issue.
 
 ## M7 — Release
+
+- [x] `.github/workflows/release.yml`: on `v*` tags (must match `Cargo.toml`), builds Linux x86_64 / aarch64 musl, macOS aarch64, Windows x86_64 / aarch64; `.tar.gz` (`.zip` on Windows) + `.sha256`, published as a GitHub release.
+- [x] Pre-commit hook `.githooks/pre-commit` (`cargo fmt --check` + clippy `-D warnings`); enable with `git config core.hooksPath .githooks`.
 
 - [ ] cargo-dist 0.32.0 (release tooling, not a dependency): GitHub Releases + shell installer + Homebrew tap.
 - [ ] Targets: `aarch64-apple-darwin`, `x86_64-unknown-linux-musl` (NAS), `aarch64-unknown-linux-musl`. The default build has no C dependencies. `--features tls` pulls aws-lc-rs, which needs cmake + clang in the musl builders.
