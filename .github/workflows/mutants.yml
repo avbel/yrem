@@ -29,7 +29,7 @@ jobs:
           cargo mutants --in-place --no-shuffle
           -f 'src/ops/**' -f src/error.rs -f 'src/mcp/**' -f src/time.rs -f 'src/secrets/**'
         continue-on-error: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: mutants-out
