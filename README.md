@@ -214,7 +214,7 @@ Output is pretty-printed on a terminal and compact when piped. Override with `--
 
 The `temporal`, `trigger`, `claim`, `procedure` and `task` commands exist on the command line only; they have no MCP tools, and `yrem call` does not run them.
 
-`yrem <command> --help` lists every argument with its type and description. The text comes from the same doc comments that become the MCP schema descriptions.
+`yrem <command> --help` documents every argument; `-h` is the terse form. The top-level `yrem --help` also covers output format, config resolution, accepted time formats and the exit-code table. Short descriptions come from the doc comments that become the MCP schema descriptions; the longer text lives in `long_help`, which the schema never sees.
 
 ## Tools
 

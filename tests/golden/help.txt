@@ -1,4 +1,23 @@
-Remote-only CLI and MCP server for yantrikdb-server
+Remote-only CLI and MCP server for yantrikdb-server. Prints JSON.
+
+OUTPUT
+  Every command prints one JSON document on stdout: pretty when stdout is a terminal, compact when piped (override with --pretty / --compact). Diagnostics and errors go to stderr; a failed command also prints {"error", "exit_code"} on stdout.
+
+CONFIG
+  Highest priority first: flags (--url, --token, --config), environment (YREM_URL, YREM_TOKEN, YREM_CONFIG; YANTRIKDB_SERVER_URL and YANTRIKDB_TOKEN as fallbacks), then $XDG_CONFIG_HOME/yrem/config.toml (default ~/.config/yrem/config.toml) with keys url, token and token_cmd. token_cmd is a shell command whose stdout is the token, used when no token is set elsewhere. One token grants access to one database; a namespace is only a row-level tag inside it.
+
+TIME ARGUMENTS
+  --since, --until, --at, --valid-from, --valid-to and --created-at accept RFC 3339 with an offset (2026-10-01T09:00:00+02:00), a date (2026-10-01, midnight UTC), unix seconds, or a span back from now: a number plus s, m, h, d or w (7d, 12h, 30m).
+
+EXIT CODES
+  0  success
+  1  other error (including not found)
+  2  usage error
+  3  authentication failed (HTTP 401/403)
+  4  operation not supported by this server (HTTP 501)
+  5  server unavailable or timed out
+  6  correct wrote the new memory but could not forget the old one; retry `yrem forget <old_rid>`
+  7  refused: the data looks like a secret. Redact it and retry, or pass --force if it is not a secret
 
 Usage: yrem [OPTIONS] <COMMAND>
 
@@ -24,10 +43,35 @@ Commands:
   help       Print this message or the help of the given subcommand(s)
 
 Options:
-      --url <URL>        Server URL [env: YREM_URL=]
-      --token <TOKEN>    Database token [env: YREM_TOKEN]
-      --config <CONFIG>  Config file [env: YREM_CONFIG=]
-      --pretty           Pretty-print JSON
-      --compact          Compact JSON
-  -h, --help             Print help
-  -V, --version          Print version
+      --url <URL>
+          Server base URL, e.g. http://192.168.1.10:7438.
+          
+          [env: YREM_URL=]
+
+      --token <TOKEN>
+          Bearer token for one database (ydb_...). Prefer the environment or token_cmd over the flag: arguments show up in process listings.
+          
+          [env: YREM_TOKEN]
+
+      --config <CONFIG>
+          TOML file with url, token and token_cmd; replaces the default location. /dev/null means no file.
+          
+          [env: YREM_CONFIG=]
+
+      --pretty
+          Pretty-print JSON
+
+      --compact
+          Compact JSON
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Examples:
+  yrem remember "The deploy pipeline uses GitHub Actions" --domain work
+  yrem recall "how do we deploy" --since 30d --top-k 5
+  echo "notes..." | yrem session capture --stdin
+  yrem doctor

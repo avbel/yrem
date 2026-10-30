@@ -3,40 +3,73 @@ Semantic search over memories
 Usage: yrem recall [OPTIONS] [QUERY]
 
 Arguments:
-  [QUERY]  
+  [QUERY]
+          Natural-language search text. Omit when using --stdin.
 
 Options:
       --top-k <TOP_K>
-          
+          Maximum results, 1 to 100 (server default 10).
+
       --url <URL>
-          Server URL [env: YREM_URL=]
+          Server base URL, e.g. http://192.168.1.10:7438.
+          
+          [env: YREM_URL=]
+
       --namespace <NAMESPACE>
-          
+          Only memories in this namespace (a row-level tag within the token's database).
+
       --token <TOKEN>
-          Database token [env: YREM_TOKEN]
-      --config <CONFIG>
-          Config file [env: YREM_CONFIG=]
-      --domain <DOMAIN>
+          Bearer token for one database (ydb_...). Prefer the environment or token_cmd over the flag: arguments show up in process listings.
           
+          [env: YREM_TOKEN]
+
+      --config <CONFIG>
+          TOML file with url, token and token_cmd; replaces the default location. /dev/null means no file.
+          
+          [env: YREM_CONFIG=]
+
+      --domain <DOMAIN>
+          Only memories with this domain label.
+
       --memory-type <MEMORY_TYPE>
+          Only memories of this type.
+          
           [possible values: semantic, episodic, procedural]
+
       --pretty
           Pretty-print JSON
+
       --compact
           Compact JSON
+
       --since <SINCE>
-          Time or span back from now (7d)
+          Only memories created at or after this time, filtered client-side. RFC 3339 with offset, YYYY-MM-DD (UTC), unix seconds, or a span back from now (7d, 12h, 30m, 2w).
+
       --until <UNTIL>
-          
+          Only memories created at or before this time, filtered client-side. Same formats as --since.
+
       --min-score-ratio <MIN_SCORE_RATIO>
-          Drop hits below this fraction of the top score
+          Above 0 up to 1.0; drop hits scoring below this fraction of the top hit.
+
       --order <ORDER>
+          Client-side sort; relevance keeps the server order.
+          
           [possible values: relevance, recency, certainty, first_mention]
+
       --refine-exclude <REFINE_EXCLUDE>...
-          Rids to drop from results
+          Rids to leave out, e.g. hits you already saw in a previous recall.
+
       --stdin
-          Read the query from stdin
+          Read the query from stdin instead of the QUERY argument.
+
   -h, --help
-          Print help
+          Print help (see a summary with '-h')
+
   -V, --version
           Print version
+
+Filters --namespace, --domain and --memory-type are applied by the server; --since, --until, --min-score-ratio and --refine-exclude are applied after the response, and the output reports how many hits each removed as filtered_by_*.
+
+Examples:
+  yrem recall "billing owner" --namespace work --top-k 5
+  yrem recall "deploys" --since 7d --order recency

@@ -1078,6 +1078,35 @@ fn help_recall_snapshot() {
     golden("help_recall.txt", &["recall", "--help"]);
 }
 
+#[test]
+fn every_argument_and_subcommand_is_documented() {
+    use clap::CommandFactory;
+
+    fn walk(cmd: &clap::Command, path: &str, missing: &mut Vec<String>) {
+        for arg in cmd.get_arguments() {
+            let id = arg.get_id().as_str();
+            if matches!(id, "help" | "version") {
+                continue;
+            }
+            if arg.get_help().is_none() && arg.get_long_help().is_none() {
+                missing.push(format!("{path} argument `{id}`"));
+            }
+        }
+        for sub in cmd.get_subcommands() {
+            let name = sub.get_name();
+            let sub_path = format!("{path} {name}");
+            if name != "help" && sub.get_about().is_none() && sub.get_long_about().is_none() {
+                missing.push(format!("{sub_path} (no about)"));
+            }
+            walk(sub, &sub_path, missing);
+        }
+    }
+
+    let mut missing = Vec::new();
+    walk(&yrem::cli::Cli::command(), "yrem", &mut missing);
+    assert!(missing.is_empty(), "undocumented: {missing:#?}");
+}
+
 // ------------------------------------------------------------ digest --hook
 
 fn hook_context(out: &Out) -> String {

@@ -76,7 +76,7 @@ jobs:
           YREM_CONFIG: /dev/null
         run: |
           set -o pipefail
-          cargo test --locked --test contract -- --nocapture 2>&1 | tee "$RUNNER_TEMP/contract.log"
+          cargo test --locked --test contract --test contract_cli -- --nocapture 2>&1 | tee "$RUNNER_TEMP/contract.log"
       - name: Summary
         if: ${{ !cancelled() }}
         run: |

@@ -26,9 +26,55 @@ use crate::ops::{
 };
 use crate::output::{self, Format};
 
+const LONG_ABOUT: &str = "\
+Remote-only CLI and MCP server for yantrikdb-server. Prints JSON.
+
+OUTPUT
+  Every command prints one JSON document on stdout: pretty when stdout is a terminal, \
+compact when piped (override with --pretty / --compact). Diagnostics and errors go to \
+stderr; a failed command also prints {\"error\", \"exit_code\"} on stdout.
+
+CONFIG
+  Highest priority first: flags (--url, --token, --config), environment (YREM_URL, \
+YREM_TOKEN, YREM_CONFIG; YANTRIKDB_SERVER_URL and YANTRIKDB_TOKEN as fallbacks), then \
+$XDG_CONFIG_HOME/yrem/config.toml (default ~/.config/yrem/config.toml) with keys url, token \
+and token_cmd. token_cmd is a shell command whose stdout is the token, used when no token \
+is set elsewhere. One token grants access to one database; a namespace is only a row-level \
+tag inside it.
+
+TIME ARGUMENTS
+  --since, --until, --at, --valid-from, --valid-to and --created-at accept RFC 3339 with an \
+offset (2026-10-01T09:00:00+02:00), a date (2026-10-01, midnight UTC), unix seconds, or a \
+span back from now: a number plus s, m, h, d or w (7d, 12h, 30m).
+
+EXIT CODES
+  0  success
+  1  other error (including not found)
+  2  usage error
+  3  authentication failed (HTTP 401/403)
+  4  operation not supported by this server (HTTP 501)
+  5  server unavailable or timed out
+  6  correct wrote the new memory but could not forget the old one; retry `yrem forget <old_rid>`
+  7  refused: the data looks like a secret. Redact it and retry, or pass --force if it is \
+not a secret";
+
+const TOP_EXAMPLES: &str = "\
+Examples:
+  yrem remember \"The deploy pipeline uses GitHub Actions\" --domain work
+  yrem recall \"how do we deploy\" --since 30d --top-k 5
+  echo \"notes...\" | yrem session capture --stdin
+  yrem doctor";
+
 /// Remote-only CLI and MCP server for yantrikdb-server. Prints JSON.
 #[derive(Debug, Parser)]
-#[command(name = "yrem", version, about, propagate_version = true)]
+#[command(
+    name = "yrem",
+    version,
+    about,
+    propagate_version = true,
+    long_about = LONG_ABOUT,
+    after_long_help = TOP_EXAMPLES,
+)]
 pub struct Cli {
     #[command(flatten)]
     pub global: Global,
@@ -39,13 +85,29 @@ pub struct Cli {
 #[derive(Debug, Args)]
 pub struct Global {
     /// Server URL.
-    #[arg(long, global = true, env = "YREM_URL")]
+    #[arg(
+        long,
+        long_help = "Server base URL, e.g. http://192.168.1.10:7438.",
+        global = true,
+        env = "YREM_URL"
+    )]
     pub url: Option<String>,
     /// Database token.
-    #[arg(long, global = true, env = "YREM_TOKEN", hide_env_values = true)]
+    #[arg(
+        long,
+        long_help = "Bearer token for one database (ydb_...). Prefer the environment or token_cmd over the flag: arguments show up in process listings.",
+        global = true,
+        env = "YREM_TOKEN",
+        hide_env_values = true
+    )]
     pub token: Option<String>,
     /// Config file.
-    #[arg(long, global = true, env = "YREM_CONFIG")]
+    #[arg(
+        long,
+        long_help = "TOML file with url, token and token_cmd; replaces the default location. /dev/null means no file.",
+        global = true,
+        env = "YREM_CONFIG"
+    )]
     pub config: Option<PathBuf>,
     /// Pretty-print JSON.
     #[arg(long, global = true, conflicts_with = "compact")]
@@ -58,8 +120,23 @@ pub struct Global {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Store a durable fact.
+    #[command(after_long_help = "\
+Examples:
+  yrem remember \"Alice owns the billing service\" --domain people --importance 0.8
+  echo \"multi-line fact\" | yrem remember --stdin
+
+Several memories at once: yrem call remember '{\"memories\":[{\"text\":\"...\"},{\"text\":\"...\"}]}'
+A refused secret exits 7 and names the findings; redact and retry, or add --force.")]
     Remember(RememberArgs),
     /// Semantic search over memories.
+    #[command(after_long_help = "\
+Filters --namespace, --domain and --memory-type are applied by the server; --since, \
+--until, --min-score-ratio and --refine-exclude are applied after the response, and the \
+output reports how many hits each removed as filtered_by_*.
+
+Examples:
+  yrem recall \"billing owner\" --namespace work --top-k 5
+  yrem recall \"deploys\" --since 7d --order recency")]
     Recall(RecallArgs),
     /// Delete a memory by rid.
     Forget(ForgetArgs),
@@ -68,13 +145,21 @@ pub enum Command {
         long_about = "Replace a stored fact that changed.\n\nTries POST /v1/correct; when \
         the server answers 501 it is emulated as get -> remember -> forget. The new record \
         links the old rid in its metadata and its created_at is now. Exit code 6 means the \
-        new record was written but the old one was not forgotten: retry `yrem forget <old_rid>`."
+        new record was written but the old one was not forgotten: retry `yrem forget <old_rid>`.\n\n\
+Examples:\n  yrem correct 01a18d82-690f-7a90-b75b-2331ceea45eb --reason \"migrated\" \
+--new-text \"The service stores data in MySQL\"\n  yrem call correct '{\"rid\":\"...\",\"reason\":\"owner changed\",\
+\"metadata_merge\":{\"team\":\"billing\"}}'\n\n\
+metadata_merge is only available through `yrem call` and MCP; it is merged into the old \
+record's metadata."
     )]
     Correct(CorrectArgs),
     /// Consolidate memories and detect conflicts.
     Think(ThinkArgs),
     /// Entity graph.
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        after_long_help = "Example:\n  yrem graph relate --src billing-svc --dst postgres --rel-type uses"
+    )]
     Graph(GraphCommand),
     /// Conflicts between stored facts.
     #[command(subcommand)]
@@ -83,16 +168,45 @@ pub enum Command {
     #[command(subcommand)]
     Session(SessionCommand),
     /// Inspect stored memories.
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        after_long_help = "\
+Example:
+  yrem memory list --namespace work --limit 20 --desc
+  yrem memory current --namespace work"
+    )]
     Memory(MemoryCommand),
     /// Stale, upcoming and point-in-time memories.
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        after_long_help = "\
+Examples:
+  yrem temporal stale --days 30
+  yrem temporal as-of \"who owns billing\" --at 2026-01-01
+  yrem temporal as-of \"deploy process\" --at 90d"
+    )]
     Temporal(TemporalCommand),
     /// Server-raised triggers.
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        after_long_help = "\
+A trigger moves pending -> delivered -> acknowledged -> acted, one step at a time. \
+`dismiss` works only while it is pending. A transition the current state does not permit, \
+or an unknown id, exits 1 (not found).
+
+Example:
+  yrem trigger list
+  yrem trigger deliver <id> && yrem trigger acknowledge <id> && yrem trigger act <id>"
+    )]
     Trigger(TriggerCommand),
     /// Temporal claims about entities.
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        after_long_help = "\
+Example:
+  yrem claim add alice owns billing-svc --valid-from 2026-01-01 --confidence-band high
+  yrem claim list alice"
+    )]
     Claim(ClaimCommand),
     /// Stored procedures.
     #[command(subcommand)]
@@ -101,8 +215,24 @@ pub enum Command {
     #[command(subcommand)]
     Task(TaskCommand),
     /// Session-start briefing (alias of `session digest`).
+    #[command(after_long_help = "\
+With --hook the output is the Claude Code SessionStart hook JSON \
+({\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":...}}), cut \
+to 10,000 characters. It never fails: if the server is unreachable it prints nothing and \
+exits 0.
+
+Example:
+  yrem digest --namespace work --include-gaps")]
     Digest(DigestCli),
     /// Run an MCP tool with raw JSON arguments.
+    #[command(after_long_help = "\
+Tool names are the MCP tools (remember, recall, correct, graph_relate, ...). Fields not \
+exposed as flags work here: remember's `memories` batch and `metadata`, correct's \
+`metadata_merge`.
+
+Examples:
+  yrem call remember '{\"memories\":[{\"text\":\"A\"},{\"text\":\"B\",\"namespace\":\"work\"}]}'
+  echo '{\"rid\":\"...\",\"reason\":\"x\",\"metadata_merge\":{\"k\":\"v\"}}' | yrem call correct")]
     Call(CallArgs),
     /// Check config, connectivity, auth and server capabilities.
     Doctor,

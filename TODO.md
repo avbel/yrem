@@ -161,7 +161,8 @@ Toolchain 1.99.1, edition 2024. Use:
   - [x] `README.md`
   - [x] `SECURITY.md`
   - [x] `.gitignore` including `config.toml` and `*.token`
-- [ ] GitHub settings: secret scanning + push protection, Dependabot alerts, branch protection on `main` (CI required).
+- [x] GitHub settings: secret scanning + push protection, Dependabot alerts, branch protection on `main` (CI required).
+  - Applied 2026-10-30. All 10 CI checks are required, including `contract`. Admins can bypass (`enforce_admins: false`). Force-push and deletion are blocked.
 - [x] CI (ubuntu + macos), each in both the default (`tls`) and `--no-default-features` (plain HTTP) variants:
   - [x] `fmt --check`
   - [x] `clippy --all-targets`
@@ -174,6 +175,7 @@ Toolchain 1.99.1, edition 2024. Use:
 ## M1 — HTTP client (`src/client`)
 
 - [ ] Create a scratch database + token on the NAS server.
+  - 2026-10-30: scratch container from the live image (0.20.0, builtin MiniLM). Both contract suites passed against it, then it was removed. Full fixture re-capture on the NAS is scheduled right after the v0.2.0 release.
   - Done in the meantime against a locally built `yantrikdb-server` 0.20.0 (scratch DB, bundled embedder): 71 fixtures in `tests/fixtures/`, API notes in `tests/fixtures/README.md`. Re-capture on the NAS to pin its exact version. Capture request/response fixtures for every v0.1 endpoint into `tests/fixtures/*.json`. Never capture from the real store. This repo is public.
 - [x] Config resolution order: CLI flags > env > `~/.config/yrem/config.toml` (`$XDG_CONFIG_HOME` honored).
   - [x] `#[derive(Deserialize)] #[serde(deny_unknown_fields)]` so a typo in the file is an error, not a silent default.
@@ -319,7 +321,8 @@ Toolchain 1.99.1, edition 2024. Use:
 - [x] Claude Code, MCP route: `claude mcp add --scope user yrem -- yrem mcp`. Credentials come from `~/.config/yrem/config.toml`, so no token lands in `~/.claude.json`.
 - [x] Claude Code, CLI route: skill shipped in the repo (`skills/yrem/SKILL.md`, README shows the symlink install), `SessionStart` hook running `yrem digest --hook` is live. Not installed here: the MCP route is active, and `Bash(yrem:*)` in `permissions.allow` is left to the user.
 - [x] Codex: `[mcp_servers.yrem] command = "yrem"`, `args = ["mcp"]`. Prefer MCP here: shell commands in Codex's workspace-write sandbox have no network by default.
-- [ ] Sandbox profiles (SBPL / bubblewrap) wrapping the agents must allow egress to `nas:7438` if the CLI route is used.
+- [x] Sandbox profiles (SBPL / bubblewrap) wrapping the agents must allow egress to `nas:7438` if the CLI route is used.
+  - Not needed: both clients use the MCP route (decision 2026-10-30). MCP servers and the SessionStart hook run outside the agent sandbox.
 - [x] Remove yantrikdb-mcp from both clients. Run a side-by-side recall comparison on the real store before switching.
   - yantrikdb-mcp could not reach the LAN address either, so yrem was compared with raw `POST /v1/recall` instead: same rids and scores. The yantrikdb hook plugins (`yantrikdb-hooks`, `yantrikdb-chatgpt`) are disabled too.
 - macOS Local Network privacy blocks LAN addresses (`192.168.x`) for non-Apple binaries started from a terminal whose permission is off: `EHOSTUNREACH`, while `/usr/bin/curl` works. The config uses the NAS Tailscale address (`100.64.23.221:7438`), which that privacy check does not cover.
@@ -331,7 +334,8 @@ Rule: every module ships with its tests in the same PR. A PR that lowers coverag
 - [x] **Coverage gate:** cargo-llvm-cov 0.9.1, `cargo llvm-cov --all-features --fail-under-lines 98 --fail-under-regions 96`.
   - [x] lcov artifact + a per-file table in the job summary. No third-party coverage service.
   - [ ] Ratchet the floor up as coverage grows; never down. (Raised to 98 / 96 on 2026-10-30; measured 98.2 % lines, 97.0 % regions.)
-- [ ] **Mutation testing:** cargo-mutants 27.1.0, weekly scheduled job. Surviving mutants in `ops`, `error`, `mcp` and `time` get an issue each. Target: zero survivors in those modules.
+- [x] **Mutation testing:** cargo-mutants 27.1.0, weekly scheduled job. Surviving mutants in `ops`, `error`, `mcp` and `time` get an issue each. Target: zero survivors in those modules.
+  - 2026-10-30 local run: 145 mutants, 4 survivors, all killed by new boundary tests (re-run: 0 missed). The weekly job opens one issue per survivor.
 - [x] **Test support:**
   - [x] `tests/support/fake_server.rs`: a `tokio::net::TcpListener` task with a scripted queue of (expected method, path, auth, body matcher) → (status, fixture, optional delay) pairs. It records every request so tests can assert which calls happened and which did not.
   - [x] Golden files with a `YREM_BLESS=1` regenerate switch.
@@ -372,6 +376,8 @@ Rule: every module ships with its tests in the same PR. A PR that lowers coverag
   - [x] `digest --hook` truncation at a multi-byte boundary
   - [x] `digest --hook` with the server down: empty stdout, exit 0
 - [x] **Contract CI job** (`.github/workflows/contract.yml`): downloads the `yantrikdb-linux-amd64` release binary pinned to the NAS version (no Docker), bundled embedder, scratch database and token, runs the suite with `YREM_CONTRACT=1`. The job summary records whether `correct` was emulated (`/v1/correct` still 501).
+- [x] **CLI contract pass** (`tests/contract_cli.rs`): the real `yrem` binary against the scratch server, covering every command group with writes, the exit codes 1/3/4/5/7 and the secret guard. It runs in the Contract workflow next to `tests/contract.rs`.
+- [x] **`--help` coverage:** every argument has `long_help`, the top level documents output, config, time formats, exit codes and examples, and command groups have examples. A test fails on any undocumented argument or subcommand. The MCP schema is unchanged.
 - [x] **Nightly contract job** (same workflow, `schedule`) against the latest server release to catch API drift. On failure it opens an issue unless one with the same title is open.
 
 ## M7 — Release
@@ -380,8 +386,8 @@ Rule: every module ships with its tests in the same PR. A PR that lowers coverag
 - [x] Pre-commit hook `.githooks/pre-commit` (`cargo fmt --check` + clippy `-D warnings`); enable with `git config core.hooksPath .githooks`.
 
 - [x] GitHub Releases + Homebrew tap (`avbel/homebrew-tap`, `Formula/yrem.rb` regenerated by `release.yml`) without cargo-dist. A shell installer is not done.
-- [ ] Targets: `aarch64-apple-darwin`, `x86_64-unknown-linux-musl` (NAS), `aarch64-unknown-linux-musl`. `tls` is now a default feature (aws-lc-rs, C); `--no-default-features` has no C dependencies. Release builds are static musl with TLS; Windows x64 uses aws-lc prebuilt NASM objects, Windows arm64 needs clang-cl.
-- [ ] Publish to crates.io.
+- [x] Targets: `aarch64-apple-darwin`, `x86_64-unknown-linux-musl` (NAS), `aarch64-unknown-linux-musl`. `tls` is now a default feature (aws-lc-rs, C); `--no-default-features` has no C dependencies. Release builds are static musl with TLS; Windows x64 uses aws-lc prebuilt NASM objects, Windows arm64 needs clang-cl.
+- [x] ~~Publish to crates.io.~~ Won't do (decision 2026-10-30). Distribution is GitHub Releases + the Homebrew tap.
 
 ## M8 — Secret guard on writes
 
