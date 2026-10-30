@@ -28,7 +28,7 @@ pub struct Finding {
     pub end: usize,
 }
 
-/// Scans every string leaf of `value`, and object keys that name a credential.
+/// Scans every string leaf of `value` and every object key.
 #[must_use]
 pub fn scan(value: &Value) -> Vec<Finding> {
     let mut out = Vec::new();
@@ -36,20 +36,20 @@ pub fn scan(value: &Value) -> Vec<Finding> {
     out
 }
 
+fn push_hits(hits: Vec<detectors::Hit>, path: &str, out: &mut Vec<Finding>) {
+    out.extend(hits.into_iter().map(|h| Finding {
+        kind: h.kind,
+        path: path.to_owned(),
+        start: h.start,
+        end: h.end,
+    }));
+}
+
 fn walk(value: &Value, path: &str, out: &mut Vec<Finding>) {
     match value {
         Value::String(s) => {
             let skip_entropy = ENTROPY_EXEMPT.contains(&path);
-            out.extend(
-                detectors::scan_text(s, skip_entropy)
-                    .into_iter()
-                    .map(|h| Finding {
-                        kind: h.kind,
-                        path: path.to_owned(),
-                        start: h.start,
-                        end: h.end,
-                    }),
-            );
+            push_hits(detectors::scan_text(s, skip_entropy), path, out);
         }
         Value::Array(items) => {
             for (i, item) in items.iter().enumerate() {
@@ -58,7 +58,15 @@ fn walk(value: &Value, path: &str, out: &mut Vec<Finding>) {
         }
         Value::Object(map) => {
             for (key, item) in map {
-                let child = format!("{path}/{}", key.replace('~', "~0").replace('/', "~1"));
+                let key_hits = detectors::scan_text(key, false);
+                // A secret in a key must not be echoed back through the pointer either.
+                let segment = if key_hits.is_empty() {
+                    key.replace('~', "~0").replace('/', "~1")
+                } else {
+                    "<key>".to_owned()
+                };
+                let child = format!("{path}/{segment}");
+                push_hits(key_hits, &child, out);
                 let before = out.len();
                 walk(item, &child, out);
                 if let Value::String(s) = item
@@ -112,7 +120,7 @@ pub fn refusal(op: &str, findings: &[Finding]) -> String {
     }
     format!(
         "{op} refused: possible secret(s), nothing stored. {}. Redact them (e.g. \"<redacted>\") \
-         and retry; if this is not secret data, retry with force=true.",
+         and retry; if this is not secret data, retry with force=true (CLI: --force).",
         parts.join("; ")
     )
 }

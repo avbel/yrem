@@ -92,16 +92,24 @@ fn rid(v: &Value) -> String {
         .to_owned()
 }
 
+/// Unique per test run so consolidation can never merge texts across runs or suites.
+fn run_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{}-{nanos}", std::process::id())
+}
+
 #[test]
 fn lifecycle() {
     if !enabled() {
         return;
     }
-    let ns = format!("yrem-cli-contract-{}", std::process::id());
+    let ns = format!("yrem-cli-contract-{}", run_id());
 
     let stored = yrem(&[
         "remember",
-        "The CLI contract service stores data in PostgreSQL",
+        &format!("The CLI contract service stores data in PostgreSQL [{ns}]"),
         "--namespace",
         &ns,
         "--domain",
@@ -114,7 +122,7 @@ fn lifecycle() {
 
     let piped = yrem_stdin(
         &["remember", "--stdin", "--namespace", &ns],
-        "The CLI contract team meets on Mondays",
+        &format!("The CLI contract team meets on Mondays [{ns}]"),
     )
     .ok();
     let piped_rid = rid(&piped);
@@ -123,7 +131,7 @@ fn lifecycle() {
         "call",
         "remember",
         &format!(
-            r#"{{"memories":[{{"text":"The CLI contract owner is Alice","namespace":"{ns}"}},{{"text":"The CLI contract runner is nightly","namespace":"{ns}","created_at":"2026-01-02"}}]}}"#
+            r#"{{"memories":[{{"text":"The CLI contract owner is Alice [{ns}]","namespace":"{ns}"}},{{"text":"The CLI contract runner is nightly [{ns}]","namespace":"{ns}","created_at":"2026-01-02"}}]}}"#
         ),
     ])
     .ok();
@@ -171,7 +179,7 @@ fn lifecycle() {
         "--reason",
         "migrated",
         "--new-text",
-        "The CLI contract service stores data in MySQL",
+        &format!("The CLI contract service stores data in MySQL [{ns}]"),
     ])
     .ok();
     eprintln!("correct emulated: {}", corrected["emulated"]);
@@ -251,13 +259,13 @@ fn v02_commands() {
     if !enabled() {
         return;
     }
-    let ns = format!("yrem-cli-contract-v02-{}", std::process::id());
+    let ns = format!("yrem-cli-contract-v02-{}", run_id());
 
     yrem(&[
         "call",
         "remember",
         &format!(
-            r#"{{"text":"The v02 CLI ledger runbook lives in the archive","namespace":"{ns}","created_at":"2026-01-02"}}"#
+            r#"{{"text":"The v02 CLI ledger runbook lives in the archive [{ns}]","namespace":"{ns}","created_at":"2026-01-02"}}"#
         ),
     ])
     .ok();
@@ -373,9 +381,9 @@ fn secret_guard() {
     if !enabled() {
         return;
     }
-    let ns = format!("yrem-cli-contract-secret-{}", std::process::id());
+    let ns = format!("yrem-cli-contract-secret-{}", run_id());
     let secret = format!("AKIA{}", "Q7W8E9R1T2Y3U4I5");
-    let text = format!("The CLI contract deploy key is {secret}");
+    let text = format!("The CLI contract deploy key is {secret} [{ns}]");
 
     let refused = yrem(&["remember", &text, "--namespace", &ns]);
     assert_eq!(refused.code, 7, "{}", refused.stderr);

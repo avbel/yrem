@@ -24,12 +24,12 @@ jobs:
     permissions:
       contents: read
       issues: write
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
       - name: Pick server version
         id: server
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ github.event_name }}" = schedule ]; then
             tag=$(gh release view -R yantrikos/yantrikdb-server --json tagName -q .tagName)
@@ -38,6 +38,8 @@ jobs:
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Start yantrikdb-server ${{ steps.server.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           DATA_DIR=$RUNNER_TEMP/ydb
           gh release download "${{ steps.server.outputs.tag }}" -R yantrikos/yantrikdb-server \
@@ -56,7 +58,7 @@ jobs:
           enabled = false
           EOF
           "$RUNNER_TEMP/yantrikdb" db --data-dir "$DATA_DIR" create contract
-          token=$("$RUNNER_TEMP/yantrikdb" token --data-dir "$DATA_DIR" create --db contract | grep -o 'ydb_[A-Za-z0-9_-]*')
+          token=$("$RUNNER_TEMP/yantrikdb" token --data-dir "$DATA_DIR" create --db contract | grep -o 'ydb_[A-Za-z0-9_-]*' | head -n1)
           echo "::add-mask::$token"
           echo "YREM_TOKEN=$token" >> "$GITHUB_ENV"
           nohup "$RUNNER_TEMP/yantrikdb" serve -c "$RUNNER_TEMP/ydb.toml" > "$RUNNER_TEMP/server.log" 2>&1 &
@@ -76,7 +78,7 @@ jobs:
           YREM_CONFIG: /dev/null
         run: |
           set -o pipefail
-          cargo test --locked --test contract --test contract_cli -- --nocapture 2>&1 | tee "$RUNNER_TEMP/contract.log"
+          cargo test --locked --test contract --test contract_cli -- --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/contract.log"
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
@@ -89,6 +91,8 @@ jobs:
         run: cat "$RUNNER_TEMP/server.log"
       - name: Open drift issue
         if: ${{ failure() && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           title="Contract drift vs yantrikdb-server ${{ steps.server.outputs.tag }}"
           if [ -z "$(gh issue list --state open --search "$title in:title" --json number -q '.[].number')" ]; then

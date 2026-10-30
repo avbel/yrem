@@ -20,11 +20,16 @@ struct Tok<'a> {
     start: usize,
 }
 
+const TRAILING: [char; 7] = ['.', ',', ';', ':', '!', '?', ')'];
+
+/// Wrapper characters (markdown, table pipes, zero-width marks) tolerated before a token body.
+const MAX_WRAPPER: usize = 8;
+
 impl<'a> Tok<'a> {
     fn new(raw: &'a str, byte: usize, start: usize) -> Self {
         Self {
             raw,
-            text: raw.trim_end_matches(['.', ',', ';', ':', '!', '?', ')']),
+            text: raw.trim_end_matches(TRAILING),
             byte,
             start,
         }
@@ -39,7 +44,7 @@ fn is_delim(c: char) -> bool {
     c.is_whitespace()
         || matches!(
             c,
-            '"' | '\'' | ',' | ';' | '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>'
+            '"' | '\'' | '`' | ',' | ';' | '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>'
         )
 }
 
@@ -77,12 +82,14 @@ impl Claimed {
 pub(super) fn scan_text(s: &str, skip_entropy: bool) -> Vec<Hit> {
     let mut hits = Vec::new();
     let mut claimed = Claimed::default();
-    private_keys(s, &mut hits, &mut claimed);
+    let blocks = armored_blocks(s);
+    private_keys(&blocks, &mut hits, &mut claimed);
     let toks = tokenize(s);
     prefixed_tokens(&toks, &mut hits, &mut claimed);
     url_credentials(&toks, &mut hits, &mut claimed);
     credential_fields(s, &toks, &mut hits, &mut claimed);
     if !skip_entropy {
+        public_material(&blocks, &toks, &mut claimed);
         high_entropy(&toks, &mut hits, &claimed);
     }
     hits
@@ -92,10 +99,23 @@ fn char_offset(s: &str, byte: usize) -> usize {
     s[..byte].chars().count()
 }
 
-fn private_keys(s: &str, hits: &mut Vec<Hit>, claimed: &mut Claimed) {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Armor {
+    Private,
+    Public,
+}
+
+/// PEM blocks as char ranges: private keys, and certificates / public keys (which are not secret).
+fn armored_blocks(s: &str) -> Vec<(Armor, Range<usize>)> {
     const BEGIN: &str = "-----BEGIN ";
     const DASHES: &str = "-----";
+    let mut blocks = Vec::new();
     let mut from = 0;
+    let mut cursor = (0, 0);
+    let mut chars_at = |byte: usize| {
+        cursor = (byte, cursor.1 + s[cursor.0..byte].chars().count());
+        cursor.1
+    };
     while let Some(p) = s[from..].find(BEGIN) {
         let begin = from + p;
         let label_at = begin + BEGIN.len();
@@ -103,10 +123,15 @@ fn private_keys(s: &str, hits: &mut Vec<Hit>, claimed: &mut Claimed) {
             break;
         };
         let after_header = label_at + close + DASHES.len();
-        if !s[label_at..label_at + close].contains("PRIVATE KEY") {
+        let label = &s[label_at..label_at + close];
+        let armor = if label.contains("PRIVATE KEY") {
+            Armor::Private
+        } else if label.contains("PUBLIC KEY") || label.contains("CERTIFICATE") {
+            Armor::Public
+        } else {
             from = after_header;
             continue;
-        }
+        };
         let end = s[after_header..]
             .find("-----END ")
             .and_then(|e| {
@@ -114,14 +139,35 @@ fn private_keys(s: &str, hits: &mut Vec<Hit>, claimed: &mut Claimed) {
                 s[tail..].find(DASHES).map(|d| tail + d + DASHES.len())
             })
             .unwrap_or(s.len());
-        let range = char_offset(s, begin)..char_offset(s, end);
+        let start = chars_at(begin);
+        blocks.push((armor, start..chars_at(end)));
+        from = end;
+    }
+    blocks
+}
+
+fn private_keys(blocks: &[(Armor, Range<usize>)], hits: &mut Vec<Hit>, claimed: &mut Claimed) {
+    for (_, range) in blocks.iter().filter(|(a, _)| *a == Armor::Private) {
         hits.push(Hit {
             kind: "private_key",
             start: range.start,
             end: range.end,
         });
-        claimed.claim(range);
-        from = end;
+        claimed.claim(range.clone());
+    }
+}
+
+/// Claims data that looks random but is public, so the entropy detector skips it.
+fn public_material(blocks: &[(Armor, Range<usize>)], toks: &[Tok], claimed: &mut Claimed) {
+    for (_, range) in blocks.iter().filter(|(a, _)| *a == Armor::Public) {
+        claimed.claim(range.clone());
+    }
+    for pair in toks.windows(2) {
+        let kind = pair[0].text;
+        if matches!(kind, "ssh-rsa" | "ssh-ed25519" | "ssh-dss") || kind.starts_with("ecdsa-sha2-")
+        {
+            claimed.claim(pair[1].start..pair[1].end());
+        }
     }
 }
 
@@ -151,6 +197,8 @@ struct Rule {
     charset: fn(char) -> bool,
     min: usize,
     max: usize,
+    /// Run must hold a digit or mixed case, so slugs like `sk-payment-gateway-production` pass.
+    shaped: bool,
 }
 
 macro_rules! rule {
@@ -161,6 +209,7 @@ macro_rules! rule {
             charset: $charset,
             min: $min,
             max: $max,
+            shaped: false,
         }
     };
 }
@@ -183,7 +232,10 @@ const RULES: &[Rule] = &[
         10,
         usize::MAX,
     ),
-    rule!("openai_anthropic_key", &["sk-"], base64url, 20, usize::MAX),
+    Rule {
+        shaped: true,
+        ..rule!("openai_anthropic_key", &["sk-"], base64url, 20, usize::MAX)
+    },
     rule!(
         "stripe_key",
         &["sk_live_", "sk_test_", "rk_live_", "rk_test_"],
@@ -209,26 +261,40 @@ const RULES: &[Rule] = &[
 fn match_prefixed(cand: &str) -> Option<(&'static str, usize)> {
     for r in RULES {
         for p in r.prefixes {
-            if let Some(rest) = cand.strip_prefix(p) {
-                let run = rest.chars().take_while(|c| (r.charset)(*c)).count();
-                if (r.min..=r.max).contains(&run) {
-                    return Some((r.kind, p.len() + run));
-                }
+            let Some(rest) = cand.strip_prefix(p) else {
+                continue;
+            };
+            let run = rest.find(|c| !(r.charset)(c)).unwrap_or(rest.len());
+            let body = &rest[..run];
+            if (r.min..=r.max).contains(&run)
+                && !is_placeholder(body)
+                && (!r.shaped || digit_or_mixed(body))
+            {
+                return Some((r.kind, p.len() + run));
             }
         }
     }
     jwt_len(cand).map(|n| ("jwt", n))
 }
 
+/// Only the leading JWT-charset run is measured, so `?id_token=<jwt>&state=x` matches and a
+/// long non-JWT string costs O(run), not O(rest of the token).
 fn jwt_len(cand: &str) -> Option<usize> {
-    let mut parts = cand.split('.');
+    let run = cand
+        .find(|c: char| !(base64url(c) || c == '.'))
+        .unwrap_or(cand.len());
+    let mut parts = cand[..run].split('.');
     let (a, b, c) = (parts.next()?, parts.next()?, parts.next()?);
-    let shape = parts.next().is_none()
-        && a.starts_with("eyJ")
-        && b.starts_with("eyJ")
-        && c.len() >= 16
-        && [a, b, c].iter().all(|p| p.chars().all(base64url));
-    shape.then(|| cand.chars().count())
+    let shape =
+        parts.next().is_none() && a.starts_with("eyJ") && b.starts_with("eyJ") && c.len() >= 16;
+    shape.then_some(run)
+}
+
+fn wrapper_len(s: &str) -> usize {
+    s.char_indices()
+        .take(MAX_WRAPPER)
+        .find(|(_, c)| alnum(*c))
+        .map_or(0, |(i, _)| i)
 }
 
 fn prefixed_tokens(toks: &[Tok], hits: &mut Vec<Hit>, claimed: &mut Claimed) {
@@ -236,51 +302,65 @@ fn prefixed_tokens(toks: &[Tok], hits: &mut Vec<Hit>, claimed: &mut Claimed) {
         if claimed.overlaps(&(t.start..t.end())) {
             continue;
         }
-        let starts = std::iter::once(0).chain(t.text.match_indices(['=', ':']).map(|(i, _)| i + 1));
-        for at in starts {
-            let Some((kind, len)) = match_prefixed(&t.text[at..]) else {
-                continue;
-            };
-            let start = t.start + char_offset(t.text, at);
-            hits.push(Hit {
-                kind,
-                start,
-                end: start + len,
-            });
-            claimed.claim(start..start + len);
-            break;
-        }
+        let bounds = std::iter::once(0).chain(t.text.match_indices(['=', ':']).map(|(i, _)| i + 1));
+        let found = bounds
+            .flat_map(|b| [b, b + wrapper_len(&t.text[b..])])
+            .find_map(|at| match_prefixed(&t.text[at..]).map(|m| (at, m)));
+        let Some((at, (kind, len))) = found else {
+            continue;
+        };
+        let start = t.start + char_offset(t.text, at);
+        hits.push(Hit {
+            kind,
+            start,
+            end: start + len,
+        });
+        claimed.claim(start..start + len);
     }
 }
 
 fn url_credentials(toks: &[Tok], hits: &mut Vec<Hit>, claimed: &mut Claimed) {
     for t in toks {
-        let range = t.start..t.end();
-        if claimed.overlaps(&range) || !has_userinfo_password(t.text) {
+        if claimed.overlaps(&(t.start..t.end())) {
             continue;
         }
+        let Some(at) = userinfo_password_scheme(t.text) else {
+            continue;
+        };
+        let start = t.start + char_offset(t.text, at);
+        let end = t.start + t.text.trim_end_matches(['*', '|']).chars().count();
         hits.push(Hit {
             kind: "url_credentials",
-            start: range.start,
-            end: range.end,
+            start,
+            end,
         });
-        claimed.claim(range);
+        claimed.claim(start..end);
     }
 }
 
-fn has_userinfo_password(token: &str) -> bool {
-    let Some((_, rest)) = token.split_once("://") else {
-        return false;
-    };
+/// Byte offset of the URL scheme when the token's authority holds a real password.
+fn userinfo_password_scheme(token: &str) -> Option<usize> {
+    let sep = token.find("://")?;
+    let rest = &token[sep + 3..];
     let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
-    authority
-        .rsplit_once('@')
-        .and_then(|(userinfo, _)| userinfo.split_once(':'))
-        .is_some_and(|(_, password)| !password.is_empty())
+    let (userinfo, _) = authority.rsplit_once('@')?;
+    let (_, password) = userinfo.split_once(':')?;
+    if password.is_empty() || is_placeholder(password) {
+        return None;
+    }
+    let scheme = |c: char| alnum(c) || matches!(c, '+' | '.' | '-');
+    Some(
+        token[..sep]
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !scheme(*c))
+            .map_or(0, |(i, c)| i + c.len_utf8()),
+    )
 }
 
 const KEYWORDS: &[&str] = &[
     "password",
+    "pgpassword",
     "passwd",
     "pwd",
     "secret",
@@ -299,10 +379,24 @@ const KEYWORDS: &[&str] = &[
     "authorization",
 ];
 
+/// camelCase boundaries count as word boundaries: `accessToken` -> `access_token`.
+fn snake_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    let mut prev_lower = false;
+    for c in name.chars() {
+        if c.is_ascii_uppercase() && prev_lower {
+            out.push('_');
+        }
+        prev_lower = c.is_ascii_lowercase() || c.is_ascii_digit();
+        out.push(c.to_ascii_lowercase());
+    }
+    out
+}
+
 pub(super) fn is_credential_name(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
+    let snake = snake_case(name);
     KEYWORDS.iter().any(|k| {
-        lower.strip_suffix(k).is_some_and(|head| {
+        snake.strip_suffix(k).is_some_and(|head| {
             head.chars()
                 .next_back()
                 .is_none_or(|c| !c.is_alphanumeric())
@@ -315,67 +409,151 @@ fn is_placeholder(v: &str) -> bool {
     lower.starts_with(['<', '$'])
         || lower.starts_with("{{")
         || lower.starts_with("***")
+        || (lower.len() > 2 && lower.starts_with('%') && lower.ends_with('%'))
         || matches!(
             lower.as_str(),
             "redacted" | "changeme" | "placeholder" | "null" | "none" | "hidden" | "example"
         )
         || lower.chars().all(|c| c == 'x')
-        || lower.chars().all(|c| c == '*')
 }
 
-/// Whether `v` has the shape of a credential value (not a placeholder).
+/// Values that point at a secret (or are not one) instead of being one.
+fn is_reference(v: &str) -> bool {
+    let lower = v.to_ascii_lowercase();
+    ["process.env.", "env.", "secrets."]
+        .iter()
+        .any(|p| lower.starts_with(p))
+        || is_path(v)
+        || is_iso_date(v)
+}
+
+fn is_path(v: &str) -> bool {
+    let drive = matches!(v.as_bytes(), [d, b':', b'/' | b'\\', ..] if d.is_ascii_alphabetic());
+    v.starts_with(['/', '\\']) || ["~/", "./", "../"].iter().any(|p| v.starts_with(p)) || drive
+}
+
+fn is_iso_date(v: &str) -> bool {
+    let b = v.as_bytes();
+    b.len() >= 10
+        && b[..10].iter().enumerate().all(|(i, c)| match i {
+            4 | 7 => *c == b'-',
+            _ => c.is_ascii_digit(),
+        })
+        && (b.len() == 10 || b[10] == b'T')
+}
+
+fn digit_or_mixed(v: &str) -> bool {
+    v.chars().any(|c| c.is_ascii_digit())
+        || (v.chars().any(char::is_uppercase) && v.chars().any(char::is_lowercase))
+}
+
+/// Whether `v` has the shape of a credential value (not a placeholder or a reference).
 pub(super) fn is_credential_value(v: &str) -> bool {
     v.chars().count() >= 8
         && !v.chars().any(char::is_whitespace)
-        && (v.chars().any(|c| c.is_ascii_digit())
-            || (v.chars().any(char::is_uppercase) && v.chars().any(char::is_lowercase))
-            || v.chars().count() >= 20)
+        && (digit_or_mixed(v) || v.chars().count() >= 20)
         && !is_placeholder(v)
+        && !is_reference(v)
 }
 
-/// Token index and byte offset where the value of a keyword at token `i` starts.
-fn value_slot(toks: &[Tok], i: usize) -> Option<(usize, usize)> {
-    let raw = toks[i].raw;
-    let sep = |s: &str| s.starts_with(['=', ':']);
-    match raw.find(['=', ':']) {
-        Some(p) if is_credential_name(&raw[..p]) => Some(if raw.len() > p + 1 {
-            (i, p + 1)
-        } else {
-            (i + 1, 0)
-        }),
-        None if raw.eq_ignore_ascii_case("bearer") => Some((i + 1, 0)),
-        None if is_credential_name(raw) => {
-            let next = toks.get(i + 1)?.raw;
-            if !sep(next) {
-                return None;
+struct Slot {
+    tok: usize,
+    off: usize,
+    /// The key sat in a `?k=v&k=v` run, where `&` and `#` end the value.
+    query: bool,
+}
+
+/// Byte offset of the first `=` / `:` whose key segment names a credential.
+///
+/// A key segment starts after the previous `? & / # = :`, which keeps the scan linear.
+fn credential_sep(raw: &str) -> Option<(usize, bool)> {
+    let mut key_start = 0;
+    let mut query = false;
+    for (p, c) in raw.char_indices() {
+        match c {
+            '?' | '&' => {
+                key_start = p + 1;
+                query = true;
             }
-            Some(if next.len() > 1 {
-                (i + 1, 1)
-            } else {
-                (i + 2, 0)
-            })
+            '/' | '#' | '=' | ':' => {
+                if matches!(c, '=' | ':') && is_credential_name(&raw[key_start..p]) {
+                    return Some((p, query));
+                }
+                key_start = p + 1;
+                query = false;
+            }
+            _ => {}
         }
-        Some(_) | None => None,
     }
+    None
+}
+
+/// Where the value of a keyword at token `i` starts.
+fn value_slot(toks: &[Tok], i: usize) -> Option<Slot> {
+    let raw = toks[i].raw;
+    let slot = |tok, off| Slot {
+        tok,
+        off,
+        query: false,
+    };
+    if let Some((p, query)) = credential_sep(raw) {
+        return Some(if raw.len() > p + 1 {
+            Slot {
+                tok: i,
+                off: p + 1,
+                query,
+            }
+        } else {
+            slot(i + 1, 0)
+        });
+    }
+    if raw.contains(['=', ':']) {
+        return None;
+    }
+    if raw.eq_ignore_ascii_case("bearer") {
+        // The caller skips a "bearer" value to the next token.
+        return Some(slot(i, 0));
+    }
+    if !is_credential_name(raw) {
+        return None;
+    }
+    let next = toks.get(i + 1)?.raw;
+    if !next.starts_with(['=', ':']) {
+        return None;
+    }
+    Some(if next.len() > 1 {
+        slot(i + 1, 1)
+    } else {
+        slot(i + 2, 0)
+    })
 }
 
 fn credential_fields(s: &str, toks: &[Tok], hits: &mut Vec<Hit>, claimed: &mut Claimed) {
     for i in 0..toks.len() {
-        let Some((mut at, mut off)) = value_slot(toks, i) else {
+        let Some(Slot {
+            tok: mut at,
+            mut off,
+            mut query,
+        }) = value_slot(toks, i)
+        else {
             continue;
         };
         let bearer_value = |t: &Tok, off: usize| {
             t.raw[off..]
-                .trim_end_matches(['.', ',', ';', ':', '!', '?', ')'])
+                .trim_end_matches(TRAILING)
                 .eq_ignore_ascii_case("bearer")
         };
         if toks.get(at).is_some_and(|t| bearer_value(t, off)) {
-            (at, off) = (at + 1, 0);
+            (at, off, query) = (at + 1, 0, false);
         }
         let Some(t) = toks.get(at) else {
             continue;
         };
-        let value = t.raw[off..].trim_end_matches(['.', ',', ';', ':', '!', '?', ')']);
+        let mut value = &t.raw[off..];
+        if query {
+            value = value.split(['&', '#']).next().unwrap_or_default();
+        }
+        let value = value.trim_end_matches(TRAILING);
         let head = s[..t.byte + off].trim_end();
         let start = t.start + char_offset(t.raw, off);
         let range = start..start + value.chars().count();
@@ -395,9 +573,9 @@ fn credential_fields(s: &str, toks: &[Tok], hits: &mut Vec<Hit>, claimed: &mut C
 }
 
 fn entropy(s: &str) -> f64 {
-    let mut counts = [0_u32; 128];
+    let mut counts = [0_u32; 256];
     for b in s.bytes() {
-        counts[usize::from(b) & 127] += 1;
+        counts[usize::from(b)] += 1;
     }
     let total = f64::from(counts.iter().sum::<u32>());
     counts
@@ -410,32 +588,25 @@ fn entropy(s: &str) -> f64 {
         .sum()
 }
 
-fn is_uuid(s: &str) -> bool {
-    s.len() == 36
-        && s.char_indices().all(|(i, c)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                c == '-'
-            } else {
-                c.is_ascii_hexdigit()
-            }
-        })
+fn entropy_char(c: char) -> bool {
+    alnum(c) || matches!(c, '+' | '/' | '=' | '_' | '-')
 }
 
 fn looks_high_entropy(t: &str) -> bool {
     t.len() >= 32
-        && t.chars()
-            .all(|c| alnum(c) || matches!(c, '+' | '/' | '=' | '_' | '-'))
+        && t.chars().all(entropy_char)
         && t.chars().filter(char::is_ascii_digit).count() >= 3
         && t.chars().any(|c| c.is_ascii_uppercase())
         && t.chars().any(|c| c.is_ascii_lowercase())
-        && !is_uuid(t)
         && entropy(t) >= 4.5
 }
 
 fn high_entropy(toks: &[Tok], hits: &mut Vec<Hit>, claimed: &Claimed) {
     for t in toks {
-        let range = t.start..t.end();
-        if looks_high_entropy(t.text) && !claimed.overlaps(&range) {
+        let body = t.text.trim_matches(|c| !entropy_char(c));
+        let lead = t.text.chars().take_while(|c| !entropy_char(*c)).count();
+        let range = t.start + lead..t.start + lead + body.chars().count();
+        if looks_high_entropy(body) && !claimed.overlaps(&range) {
             hits.push(Hit {
                 kind: "high_entropy",
                 start: range.start,

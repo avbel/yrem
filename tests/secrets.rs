@@ -50,8 +50,11 @@ fn gitlab_slack_and_openai_keys() {
     for p in ["xoxa-", "xoxb-", "xoxp-", "xoxr-", "xoxs-"] {
         threshold("slack_token", p, '1', 10);
     }
-    threshold("openai_anthropic_key", "sk-", 'a', 20);
+    let at = |n: usize| format!("sk-{}", ALNUM.chars().take(n).collect::<String>());
+    assert_eq!(kinds(&at(20)), vec!["openai_anthropic_key"]);
+    assert!(kinds(&at(19)).is_empty());
     assert_eq!(kinds("sk-ant-api03-abcdefghij-klmnopqrst_uv").len(), 1);
+    assert_eq!(kinds(&format!("sk-proj-{ALNUM}")).len(), 1);
 }
 
 #[test]
@@ -93,7 +96,19 @@ fn jwt_needs_three_segments_and_a_long_signature() {
     assert!(kinds(&format!("abc.eyJzdWIiOiIx.{}", "s".repeat(20))).is_empty());
     assert!(kinds(&format!("eyJhbGciOi.abc.{}", "s".repeat(20))).is_empty());
     assert!(kinds(&format!("{}.x", jwt(20))).is_empty());
-    assert!(kinds(&format!("eyJhbGciOi.eyJzdWIiOiIx.{}*", "s".repeat(20))).is_empty());
+    let f = only(&format!("**eyJhbGciOi.eyJzdWIiOiIx.{}**", "s".repeat(20)));
+    assert_eq!(
+        (f.kind, f.start, f.end),
+        ("jwt", 2, 2 + 10 + 1 + 12 + 1 + 20)
+    );
+}
+
+#[test]
+fn jwt_in_query_string_measures_only_its_own_run() {
+    let jwt = format!("eyJhbGciOi.eyJzdWIiOiIx.{}", "s".repeat(20));
+    let f = only(&format!("https://h/cb?id_token={jwt}&state=abc"));
+    assert_eq!((f.kind, f.start), ("jwt", 22));
+    assert_eq!(f.end - f.start, jwt.len());
 }
 
 #[test]
@@ -348,7 +363,7 @@ fn soft_refusal_text() {
         msg,
         "remember refused: possible secret(s), nothing stored. openai_anthropic_key at \
          /text[41..93]. Redact them (e.g. \"<redacted>\") and retry; if this is not secret \
-         data, retry with force=true."
+         data, retry with force=true (CLI: --force)."
     );
 }
 
@@ -427,4 +442,318 @@ fn findings_serialize_without_hardness() {
 fn slack_token_charset_is_alnum_and_dash() {
     assert_eq!(kinds("xoxb-12345-6789").len(), 1);
     assert!(kinds("xoxb-123456789_1").is_empty());
+}
+
+fn b64(seed: u64, len: usize) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut x = seed;
+    (0..len)
+        .map(|_| {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            char::from(A[usize::try_from(x >> 58).unwrap()])
+        })
+        .collect()
+}
+
+fn ghp() -> String {
+    format!("ghp_{ALNUM}abcd")
+}
+
+#[test]
+fn wrapped_secrets_are_found_with_exact_offsets() {
+    let aws = format!("AKIA{}", "Z".repeat(16));
+    let jwt = format!("eyJhbGciOi.eyJzdWIiOiIx.{}", "s".repeat(20));
+    let sk = format!("sk-proj-{ALNUM}");
+    let cases = [
+        (ghp(), "github_token"),
+        (aws, "aws_access_key"),
+        (sk, "openai_anthropic_key"),
+        (jwt, "jwt"),
+        (ALNUM.to_owned(), "high_entropy"),
+    ];
+    for (secret, kind) in cases {
+        let n = secret.chars().count();
+        for (open, close) in [
+            ("`", "`"),
+            ("**", "**"),
+            ("|", "|"),
+            ("#", ""),
+            ("\u{200b}", ""),
+            ("(`", "`)"),
+        ] {
+            let f = only(&format!("x {open}{secret}{close} y"));
+            let start = 2 + open.chars().count();
+            assert_eq!(
+                (f.kind, f.start, f.end),
+                (kind, start, start + n),
+                "{open}{kind}"
+            );
+        }
+    }
+}
+
+#[test]
+fn wrapped_credentials_and_urls() {
+    let f = only("password: `Abcdef12`");
+    assert_eq!((f.start, f.end), (11, 19));
+    let f = only("see `postgres://u:s3cr3t@h/db` now");
+    assert_eq!((f.kind, f.start, f.end), ("url_credentials", 5, 29));
+    let f = only("**https://u:s3cr3t@h/db**");
+    assert_eq!((f.kind, f.start, f.end), ("url_credentials", 2, 23));
+    let f = only(&format!("token=`{}`", ghp()));
+    assert_eq!((f.kind, f.start, f.end), ("github_token", 7, 47));
+}
+
+#[test]
+fn query_string_credentials() {
+    for (s, start, end) in [
+        ("https://h/x?api_key=Abcdef12", 20, 28),
+        ("https://h/x?auth_token=Abcdef12&page=2", 23, 31),
+        ("redis://cache:6379/0?password=Abcdef12", 30, 38),
+        ("user=bob&password=Abcdef12", 18, 26),
+        ("a=1&token=Abcdef12#frag", 10, 18),
+        ("a=1&token=Abcdef12&b=2", 10, 18),
+    ] {
+        let f = only(s);
+        assert_eq!(
+            (f.kind, f.start, f.end),
+            ("credential_field", start, end),
+            "{s}"
+        );
+    }
+    assert!(kinds("https://h/x?page=Abcdef12&sort=asc").is_empty());
+    assert!(kinds("https://h/x?token=abc&page=Abcdef12").is_empty());
+    let f = only("password=Abc#12345&x");
+    assert_eq!((f.start, f.end), (9, 20));
+}
+
+#[test]
+fn camel_case_credential_names() {
+    for name in [
+        "accessToken",
+        "refreshToken",
+        "authToken",
+        "apiToken",
+        "clientSecret",
+        "privateKey",
+        "secretKey",
+        "awsSecretAccessKey",
+        "dbPassword",
+        "AccessToken",
+        "PGPASSWORD",
+        "DB_Token",
+    ] {
+        assert_eq!(
+            kinds(&format!("{name}=Abcdef12")),
+            vec!["credential_field"],
+            "{name}"
+        );
+        assert_eq!(scan(&json!({ name: "Abcdef12" })).len(), 1, "{name}");
+    }
+    for name in ["maxTokens", "passwordHash", "idempotencyKey", "monkey"] {
+        assert!(kinds(&format!("{name}=Abcdef12")).is_empty(), "{name}");
+        assert!(scan(&json!({ name: "Abcdef12" })).is_empty(), "{name}");
+    }
+}
+
+#[test]
+fn certificates_and_public_keys_of_real_length_are_clean() {
+    let body = |seed| {
+        (0..20_u64)
+            .map(|i| b64(seed + i, 64))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(kinds(&b64(1, 64)), vec!["high_entropy"]);
+    for label in [
+        "CERTIFICATE",
+        "PUBLIC KEY",
+        "RSA PUBLIC KEY",
+        "CERTIFICATE REQUEST",
+    ] {
+        let pem = format!(
+            "-----BEGIN {label}-----\n{}\n-----END {label}-----",
+            body(7)
+        );
+        assert!(kinds(&pem).is_empty(), "{label}");
+        assert!(kinds(&format!("cert: {pem} tail")).is_empty(), "{label}");
+    }
+    let unterminated = format!("-----BEGIN CERTIFICATE-----\n{}", body(9));
+    assert!(kinds(&unterminated).is_empty());
+    for kind in ["ssh-rsa", "ssh-ed25519", "ssh-dss", "ecdsa-sha2-nistp256"] {
+        let line = format!("{kind} {} me@host", b64(3, 372));
+        assert!(kinds(&line).is_empty(), "{kind}");
+    }
+    assert_eq!(
+        kinds(&format!("ssh-rsa {} {}", b64(3, 372), b64(4, 64))).len(),
+        1
+    );
+    let both = format!(
+        "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n{}",
+        body(5),
+        ghp()
+    );
+    assert_eq!(kinds(&both), vec!["github_token"]);
+    let inside = format!(
+        "-----BEGIN CERTIFICATE-----\n{}\n{}\n-----END CERTIFICATE-----",
+        body(5),
+        ghp()
+    );
+    assert_eq!(kinds(&inside), vec!["github_token"]);
+}
+
+#[test]
+fn secrets_in_object_keys_are_found_and_never_echoed() {
+    let token = ghp();
+    let f = scan(&json!({ token.clone(): "fine" }));
+    assert_eq!(f.len(), 1);
+    assert_eq!(
+        (f[0].kind, f[0].path.as_str(), f[0].start, f[0].end),
+        ("github_token", "/<key>", 0, 40)
+    );
+    let f = scan(&json!({"metadata": {token.clone(): {"password": "Abcdef12"}, "ok": 1}}));
+    let paths: Vec<_> = f.iter().map(|f| f.path.as_str()).collect();
+    assert_eq!(paths, vec!["/metadata/<key>", "/metadata/<key>/password"]);
+    let f = scan(&json!({ token.clone(): ["a", token.clone()] }));
+    assert_eq!(f[1].path, "/<key>/1");
+    let msg = guard(
+        "remember",
+        false,
+        &json!({"metadata": {token.clone(): "v"}}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(!msg.contains(&token), "{msg}");
+    let f = scan(&json!({"password": token}));
+    assert_eq!(f[0].path, "/password");
+    assert!(scan(&json!({"plain_key": "fine"})).is_empty());
+}
+
+#[test]
+fn pathological_input_scans_in_linear_time() {
+    let start = std::time::Instant::now();
+    for unit in ["=", "a=", ":", "eyJ."] {
+        let big = unit.repeat(1_000_000 / unit.len());
+        let _ = text(&big);
+    }
+    assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
+}
+
+#[test]
+fn placeholders_after_vendor_prefixes() {
+    for s in [
+        format!("sk-{}", "x".repeat(24)),
+        format!("ghp_{}", "x".repeat(36)),
+        format!("ghp_{}", "X".repeat(36)),
+        format!("glpat-{}", "x".repeat(20)),
+        format!("AKIA{}", "X".repeat(16)),
+        format!("postgres://u:{}@h/db", "*".repeat(4)),
+        "postgres://u:xxxx@h/db".to_owned(),
+        "postgres://u:$DB_PASS@h/db".to_owned(),
+        "postgres://u:%DB_PASS%@h/db".to_owned(),
+        "postgres://u:<password>@h/db".to_owned(),
+        "postgres://u:${PASS}@h/db".to_owned(),
+    ] {
+        assert!(kinds(&s).is_empty(), "{s}");
+    }
+    assert_eq!(kinds("postgres://u:ab@h/db"), vec!["url_credentials"]);
+}
+
+#[test]
+fn slugs_are_not_openai_keys() {
+    for s in [
+        "sk-payment-gateway-production",
+        "sk-lowercase-words-only-here-ok",
+    ] {
+        assert!(kinds(s).is_empty(), "{s}");
+    }
+    for s in [
+        "sk-proj-abcdefghijklmnopqrstuv1",
+        "sk-AbcdefghijklmnopqrstuvW",
+        "sk-ant-api03-abcdefghij-klmnopqrst_uv",
+    ] {
+        assert_eq!(kinds(s), vec!["openai_anthropic_key"], "{s}");
+    }
+}
+
+#[test]
+fn references_are_not_credential_values() {
+    for v in [
+        "process.env.DB_PASSWORD",
+        "env.DB_PASSWORD",
+        "secrets.DB_PASSWORD",
+        "${DB_PASSWORD}",
+        "$DB_PASSWORD",
+        "%DB_PASSWORD%",
+        "/Users/avbel/Projects/yrem",
+        "~/secrets/file1",
+        "./config/file1.toml",
+        "../config/file1.toml",
+        "C:\\Users\\avbel\\x1",
+        "C:/Users/avbel/x1",
+        "2026-10-30",
+        "2026-10-30T12:00:00Z",
+    ] {
+        assert!(kinds(&format!("password={v}")).is_empty(), "{v}");
+        assert!(kinds(&format!("token: {v}")).is_empty(), "{v}");
+        assert!(scan(&json!({"password": v})).is_empty(), "{v}");
+    }
+    assert!(kinds("pwd: /Users/avbel/Projects").is_empty());
+    for v in ["2026-10-30x", "2026/10/30aa", "C:Users1234", "e2026-10-30"] {
+        assert_eq!(kinds(&format!("password={v}")).len(), 1, "{v}");
+    }
+}
+
+#[test]
+fn placeholder_runs_and_near_misses() {
+    assert!(kinds(&format!("password={}", "x".repeat(20))).is_empty());
+    assert!(kinds(&format!("password={}", "X".repeat(20))).is_empty());
+    assert_eq!(
+        kinds(&format!("password={}", "x".repeat(19) + "y")).len(),
+        1
+    );
+    for v in [
+        "<a-long-placeholder-value>",
+        "$a_long_placeholder_value",
+        "***a_long_placeholder_value_x",
+    ] {
+        assert!(kinds(&format!("password={v}")).is_empty(), "{v}");
+    }
+    assert!(kinds("username = Abcdef12").is_empty());
+    assert!(kinds("username: Abcdef12").is_empty());
+    let random36 = b64(11, 36);
+    assert_eq!(only(&random36).kind, "high_entropy");
+}
+
+#[test]
+fn bearer_after_a_keyword_in_the_same_token() {
+    for (s, start, end) in [
+        ("token=Bearer Abcdef12", 13, 21),
+        ("authorization:Bearer Abcdef12", 21, 29),
+        ("Bearer Abcdef12", 7, 15),
+    ] {
+        let f = only(s);
+        assert_eq!(
+            (f.kind, f.start, f.end),
+            ("credential_field", start, end),
+            "{s}"
+        );
+    }
+    assert!(kinds("token=Bearer").is_empty());
+}
+
+#[test]
+fn percent_placeholders_need_both_ends() {
+    assert!(kinds("postgres://u:%DB_PASS%@h/db").is_empty());
+    for pw in ["%%", "%abc", "abc%", "a%b"] {
+        assert_eq!(
+            kinds(&format!("postgres://u:{pw}@h/db")),
+            vec!["url_credentials"],
+            "{pw}"
+        );
+    }
+    assert_eq!(kinds("password=%Abcdef12").len(), 1);
+    assert_eq!(kinds("password=Abcdef12%").len(), 1);
 }

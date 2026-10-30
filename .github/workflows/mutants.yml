@@ -27,7 +27,7 @@ jobs:
       - name: Run cargo-mutants
         run: >
           cargo mutants --in-place --no-shuffle
-          -f 'src/ops/**' -f src/error.rs -f 'src/mcp/**' -f src/time.rs
+          -f 'src/ops/**' -f src/error.rs -f 'src/mcp/**' -f src/time.rs -f 'src/secrets/**'
         continue-on-error: true
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
@@ -43,7 +43,7 @@ jobs:
           [ -s mutants.out/missed.txt ] || exit 0
           while IFS= read -r mutant; do
             title="Surviving mutant: $mutant"
-            existing=$(gh issue list --state open --search "\"$mutant\" in:title" --json title -q ".[] | select(.title == \"$title\") | .title")
+            existing=$(gh issue list --state open --search "Surviving mutant in:title" --limit 500 --json title | jq -r --arg t "$title" '.[] | select(.title == $t) | .title')
             if [ -z "$existing" ]; then
               gh issue create --title "$title" \
                 --body "Weekly cargo-mutants run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Add a test that fails with this mutation applied."

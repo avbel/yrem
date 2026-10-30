@@ -272,7 +272,7 @@ When the server implements native corrections, yrem uses them automatically.
 
 ## Output and exit codes
 
-Every command prints a single JSON document on stdout; diagnostics go to stderr. In MCP mode, failures come back as tool results with `isError: true`.
+Every command prints a single JSON document on stdout, and failures print `{"error", "exit_code"}` there too (config errors included, exit 1); diagnostics go to stderr. clap usage errors (exit 2, e.g. an unknown flag) are the exception: clap prints them on stderr and stdout stays empty. `yrem mcp` keeps stdout for the protocol, so its failures go to stderr only. In MCP mode, failures come back as tool results with `isError: true`.
 
 | Code | Meaning |
 |---|---|
@@ -289,13 +289,13 @@ Every command prints a single JSON document on stdout; diagnostics go to stderr.
 
 A write that looks like it holds a secret fails before any HTTP request, with exit code 7 (`isError` in MCP). The error lists each finding's kind and location (`aws_access_key at /text[4..24]`, char offsets), never the matched text, and tells the agent to redact and retry. The CLI JSON error also carries `findings: [{kind, path, start, end}]`.
 
-Guarded writes: `remember` (a bad item rejects the whole batch), `correct` (the new values only; the old record copied while emulating is not scanned, so `correct` can redact a leaked secret), `session_capture`, `graph_relate`, `conflict_resolve`, and the CLI-only `claim add`, `session end`, `forget --reason`, `conflict dismiss`. Reads and server-derived writes (`think`) are not scanned.
+Guarded writes: `remember` (a bad item rejects the whole batch), `correct` (the new values only; the old record copied while emulating is not scanned, so `correct` can redact a leaked secret), `session_capture`, `graph_relate`, `conflict_resolve`, `forget` (its `reason`), and the CLI-only `claim add`, `session start` (`--client-id`), `session end`, `conflict dismiss`. All of them take `force` (`--force` on the CLI). Reads and server-derived writes (`think`) are not scanned.
 
 Detectors (hand-written, no regex):
 
 | Kind | Matches |
 |---|---|
-| `private_key` | `-----BEGIN … PRIVATE KEY-----` block; certificates and public keys are fine |
+| `private_key` | `-----BEGIN … PRIVATE KEY-----` block; certificates, public keys and `ssh-*` / `ecdsa-*` public key lines are fine |
 | `ydb_token` | `ydb_` + 32 or more alphanumerics |
 | `aws_access_key` | `AKIA` / `ASIA` + 16 characters |
 | `github_token` | `ghp_` / `gho_` / `ghu_` / `ghs_` / `ghr_` + 36 or more, `github_pat_…` |
@@ -305,7 +305,7 @@ Detectors (hand-written, no regex):
 | `google_api_key` | `AIza` + exactly 35 |
 | `jwt` | three dot-separated segments, the first two starting `eyJ` |
 | `url_credentials` | `scheme://user:password@host` |
-| `credential_field` | `password`, `secret`, `api_key`, `token`, `authorization`, `Bearer …` and similar keywords followed by `=` / `:` and a value of 8 or more characters that has a digit, mixed case or 20+ characters; also the same keys in `metadata`. Placeholders (`<…>`, `$VAR`, `{{…}}`, `***`, `redacted`, `changeme`) pass |
+| `credential_field` | `password`, `secret`, `api_key`, `token`, `authorization`, `Bearer …` and similar keywords followed by `=` / `:` and a value of 8 or more characters that has a digit, mixed case or 20+ characters; also the same keys in `metadata`. Names match in snake, kebab, camel and Pascal case, and inside `?k=v&k=v` query strings. Placeholders (`<…>`, `$VAR`, `{{…}}`, `***`, `redacted`, `changeme`) and references (`process.env.X`, `secrets.X`, `%X%`, file paths, ISO dates) pass |
 | `high_entropy` | a 32+ character base64-like token with high entropy; hex, UUIDs and identifiers (`rid`, `idempotency_key`) are exempt |
 
 `force` (`--force`, or `"force": true` in MCP and `yrem call`) waives every detector for that call, private keys and `ydb_` tokens included: the data is stored as given and the caller, agent or human, takes responsibility. There is no environment or config switch. `force` is never sent to the server.
@@ -314,7 +314,7 @@ Detectors (hand-written, no regex):
 
 ## Not supported
 
-These are not exposed because the server has no replicated path for them yet (501) or because they are local-file operations: task writes, procedure learn/reinforce, category learn/reset, packs, atlas. Time-travel recall and triggers are planned for v0.2.
+These are not exposed because the server has no replicated path for them yet (501) or because they are local-file operations: task writes, procedure learn/reinforce, category learn/reset, packs, atlas. Time-travel recall (`temporal as-of`) and triggers shipped in v0.2 as CLI-only commands.
 
 ## Security
 
@@ -331,12 +331,12 @@ cargo fmt
 cargo clippy --all-targets -- -D warnings
 cargo test
 cargo llvm-cov --all-features --fail-under-lines 98 --fail-under-regions 96
-YREM_CONTRACT=1 YREM_URL=http://localhost:7438 YREM_TOKEN=... cargo test --test contract
+YREM_CONTRACT=1 YREM_URL=http://localhost:7438 YREM_TOKEN=... cargo test --test contract --test contract_cli -- --nocapture --test-threads=1
 ```
 
 The toolchain is pinned in `rust-toolchain.toml`. Tests replay fixtures captured from a scratch database through a fake HTTP server. MCP tests drive `yrem mcp` with the rmcp client. Regenerate golden files with `YREM_BLESS=1 cargo test`.
 
-CI runs `cargo fmt --check`, clippy (warnings are errors), tests on Linux and macOS (default TLS build and `--no-default-features`), Windows x86_64 / arm64 builds, the coverage gate and `cargo deny`. The Contract workflow runs `tests/contract.rs` against the pinned `yantrikdb-server` release binary on every push, and nightly against the latest release. Pushing a tag `vX.Y.Z` that matches the `Cargo.toml` version builds the release archives, publishes a GitHub release and updates `Formula/yrem.rb` in [avbel/homebrew-tap](https://github.com/avbel/homebrew-tap) (needs the `HOMEBREW_TAP_TOKEN` secret: a token with write access to that repo).
+CI runs `cargo fmt --check`, clippy (warnings are errors), tests on Linux and macOS (default TLS build and `--no-default-features`), Windows x86_64 / arm64 builds, the coverage gate and `cargo deny`. The Contract workflow runs `tests/contract.rs` (library) and `tests/contract_cli.rs` (the `yrem` binary) against the pinned `yantrikdb-server` release binary on every push, and nightly against the latest release. Pushing a tag `vX.Y.Z` that matches the `Cargo.toml` version builds the release archives, publishes a GitHub release and updates `Formula/yrem.rb` in [avbel/homebrew-tap](https://github.com/avbel/homebrew-tap) (needs the `HOMEBREW_TAP_TOKEN` secret: a token with write access to that repo).
 
 ## License
 

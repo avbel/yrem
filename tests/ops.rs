@@ -697,6 +697,7 @@ async fn session_start_fixture() {
         .session_start(SessionStartArgs {
             namespace: Some(s("payments")),
             client_id: Some(s("fixture-client")),
+            ..SessionStartArgs::default()
         })
         .await
         .unwrap();

@@ -21,14 +21,22 @@ fn call<T: serde::de::DeserializeOwned>(v: Value) -> T {
     serde_json::from_value(v).unwrap()
 }
 
+/// Unique per test run so consolidation can never merge texts across runs or suites.
+fn run_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{}-{nanos}", std::process::id())
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn lifecycle() {
     let Some(app) = app() else { return };
-    let ns = format!("yrem-contract-{}", std::process::id());
+    let ns = format!("yrem-contract-{}", run_id());
 
     let stored = app
         .remember(call(json!({
-            "text": "The contract test service stores data in PostgreSQL",
+            "text": format!("The contract test service stores data in PostgreSQL [{ns}]"),
             "namespace": ns, "domain": "work", "importance": 0.7,
             "metadata": {"suite": "contract"}
         })))
@@ -38,8 +46,8 @@ async fn lifecycle() {
 
     let batch = app
         .remember(call(json!({"memories": [
-            {"text": "The contract test team meets on Mondays", "namespace": ns},
-            {"text": "The contract test owner is Alice", "namespace": ns, "created_at": "2026-01-02"}
+            {"text": format!("The contract test team meets on Mondays [{ns}]"), "namespace": ns},
+            {"text": format!("The contract test owner is Alice [{ns}]"), "namespace": ns, "created_at": "2026-01-02"}
         ]})))
         .await
         .unwrap();
@@ -69,7 +77,9 @@ async fn lifecycle() {
         .correct(CorrectArgs {
             rid: rid.clone(),
             reason: "migrated".into(),
-            new_text: Some("The contract test service stores data in MySQL".into()),
+            new_text: Some(format!(
+                "The contract test service stores data in MySQL [{ns}]"
+            )),
             ..CorrectArgs::default()
         })
         .await
@@ -129,8 +139,9 @@ async fn lifecycle() {
     }
     let captured = app
         .session_capture(SessionCaptureArgs {
-            summary: "We decided the contract test runs nightly. Bob owns the contract runner."
-                .into(),
+            summary: format!(
+                "We decided the contract test runs nightly. Bob owns the contract runner [{ns}]."
+            ),
             namespace: Some(ns.clone()),
             ..SessionCaptureArgs::default()
         })
@@ -141,6 +152,7 @@ async fn lifecycle() {
         .session_start(SessionStartArgs {
             namespace: Some(ns.clone()),
             client_id: Some("yrem-contract".into()),
+            ..SessionStartArgs::default()
         })
         .await
         .unwrap();
@@ -165,18 +177,18 @@ async fn lifecycle() {
 #[tokio::test(flavor = "current_thread")]
 async fn v02_endpoints() {
     let Some(app) = app() else { return };
-    let ns = format!("yrem-contract-v02-{}", std::process::id());
+    let ns = format!("yrem-contract-v02-{}", run_id());
 
     let old = app
         .remember(call(json!({
-            "text": "The v02 contract ledger runbook lives in the archive",
+            "text": format!("The v02 contract ledger runbook lives in the archive [{ns}]"),
             "namespace": ns, "created_at": "2026-01-02"
         })))
         .await
         .unwrap();
     let procedure = app
         .remember(call(json!({
-            "text": "To roll back a v02 contract deploy, redeploy the previous tag",
+            "text": format!("To roll back a v02 contract deploy, redeploy the previous tag [{ns}]"),
             "namespace": ns, "memory_type": "procedural", "domain": "deploy"
         })))
         .await

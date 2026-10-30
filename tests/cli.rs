@@ -1369,7 +1369,9 @@ fn config_unknown_key_is_rejected() {
     c.arg("--config").arg(&path).args(["memory", "stats"]);
     let out = run(c, None);
     assert_eq!(out.code, 1, "{}", out.stderr);
-    assert!(out.stdout.is_empty());
+    let v = out.json();
+    assert_eq!(v["exit_code"], 1);
+    assert!(v["error"].as_str().unwrap().contains("bogus_key"), "{v}");
     assert!(out.stderr.starts_with("yrem:"), "{}", out.stderr);
     assert!(out.stderr.contains("bogus_key"), "{}", out.stderr);
     std::fs::remove_dir_all(dir).unwrap();
@@ -1388,6 +1390,13 @@ fn missing_explicit_config_and_missing_url_exit_1() {
     let out = run(c, None);
     assert_eq!(out.code, 1);
     assert!(out.stderr.contains("no server URL"), "{}", out.stderr);
+    assert_eq!(out.json()["exit_code"], 1);
+    assert!(
+        out.json()["error"]
+            .as_str()
+            .unwrap()
+            .contains("no server URL")
+    );
 }
 
 fn fake_aws() -> String {
@@ -1475,5 +1484,45 @@ fn secret_guard_on_cli_only_writes() {
     ] {
         assert_eq!(yrem(&srv, &args).code, 7, "{args:?}");
     }
+    assert!(srv.requests().is_empty());
+}
+
+#[test]
+fn session_start_client_id_is_guarded() {
+    let secret = fake_aws();
+    let none = FakeServer::start(vec![]);
+    let out = yrem(&none, &["session", "start", "--client-id", &secret]);
+    assert_eq!(out.code, 7, "{}", out.stderr);
+    assert!(none.requests().is_empty());
+    let srv = FakeServer::start(vec![Step::post("/v1/sessions").fixture("session_start")]);
+    ok(&yrem(
+        &srv,
+        &["session", "start", "--client-id", &secret, "--force"],
+    ));
+    srv.assert_done();
+}
+
+#[test]
+fn call_type_errors_do_not_echo_the_value() {
+    let srv = FakeServer::start(vec![]);
+    let secret = format!("ghp_{}", "Z".repeat(36));
+    for args in [
+        json!({"text": "x", "importance": secret}),
+        json!({"text": "x", "memory_type": secret}),
+        json!({"text": "x", secret.clone(): 1}),
+    ] {
+        let out = yrem(&srv, &["call", "remember", &args.to_string()]);
+        assert_eq!(out.code, 2, "{}", out.stderr);
+        assert!(!out.stdout.contains(&secret) && !out.stderr.contains(&secret));
+        assert!(out.json()["error"].as_str().unwrap().contains("remember: "));
+    }
+    let out = yrem(&srv, &["call", "remember", r#"{"text": "x", "bogus": 1}"#]);
+    assert!(
+        out.stderr.contains("unknown field `…`, expected one of"),
+        "{}",
+        out.stderr
+    );
+    let out = yrem(&srv, &["call", "remember", r#"{"text": 5}"#]);
+    assert!(out.stderr.contains("expected a string"), "{}", out.stderr);
     assert!(srv.requests().is_empty());
 }

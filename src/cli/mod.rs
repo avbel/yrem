@@ -356,26 +356,35 @@ pub async fn run() -> ExitCode {
         Ok(cli) => cli,
         Err(e) => e.exit(),
     };
+    let stdout_is_protocol = matches!(cli.command, Command::Mcp);
     match execute(cli, url_from_env, token_from_env).await {
         Ok(code) => code,
-        Err(e) => report(&e),
+        Err(e) => report(&e, stdout_is_protocol),
     }
 }
 
-/// Prints an error (JSON on stdout for library errors, text on stderr) and picks the exit code.
-fn report(e: &anyhow::Error) -> ExitCode {
+/// Prints an error (JSON on stdout, text on stderr) and picks the exit code.
+///
+/// `yrem mcp` owns stdout for JSON-RPC, so its failures go to stderr only.
+fn report(e: &anyhow::Error, stdout_is_protocol: bool) -> ExitCode {
     eprintln!("yrem: {e:#}");
-    match e.downcast_ref::<Error>() {
-        Some(err) => {
-            let mut body = json!({ "error": err.to_string(), "exit_code": err.exit_code() });
-            if let Error::Sensitive { findings, .. } = err {
-                body["findings"] = json!(findings);
-            }
-            output::print_raw(&body.to_string());
-            ExitCode::from(err)
-        }
-        None => ExitCode::FAILURE,
+    let (mut body, code) = match e.downcast_ref::<Error>() {
+        Some(err) => (
+            json!({ "error": err.to_string(), "exit_code": err.exit_code() }),
+            ExitCode::from(err),
+        ),
+        None => (
+            json!({ "error": format!("{e:#}"), "exit_code": 1 }),
+            ExitCode::FAILURE,
+        ),
+    };
+    if let Some(Error::Sensitive { findings, .. }) = e.downcast_ref::<Error>() {
+        body["findings"] = json!(findings);
     }
+    if !stdout_is_protocol {
+        output::print_raw(&body.to_string());
+    }
+    code
 }
 
 async fn execute(cli: Cli, url_from_env: bool, token_from_env: bool) -> anyhow::Result<ExitCode> {

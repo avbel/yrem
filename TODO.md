@@ -446,12 +446,12 @@ A write that looks like it contains a secret (password, API key, token, private 
 - [x] **2. Error.** `Error::Sensitive { op, findings }`.
   - Exit code **7** ("refused: sensitive data"); `is_retryable() == false`.
   - Single-line text, at most 5 findings and then `; +N more`. It never includes the matched text.
-    - One template for every finding: `remember refused: possible secret(s), nothing stored. openai_anthropic_key at /text[41..93]; credential_field at /metadata/password. Redact them (e.g. "<redacted>") and retry; if this is not secret data, retry with force=true.`
+    - One template for every finding: `remember refused: possible secret(s), nothing stored. openai_anthropic_key at /text[41..93]; credential_field at /metadata/password. Redact them (e.g. "<redacted>") and retry; if this is not secret data, retry with force=true (CLI: --force).`
   - CLI JSON error output adds `"findings": [{kind, path, start, end}]`.
 - [x] **3. Guard in the ops layer.** `secrets::guard(op, force, &request)?` runs in each `App` method right before the first `self.client.*` call. It scans the final request struct, so MCP, CLI and `yrem call` share it and nothing is sent on rejection.
-  - MCP tools that get the guard and a `force` arg: `remember` (single and batch: one bad item rejects the whole batch), `correct`, `session_capture`, `graph_relate`, `conflict_resolve`.
+  - MCP tools that get the guard and a `force` arg: `remember` (single and batch: one bad item rejects the whole batch), `correct`, `session_capture`, `graph_relate`, `conflict_resolve`, `forget` (its `reason`).
     - `conflict_dismiss` goes through `conflict_resolve` and inherits the guard.
-  - CLI-only, `--force`: `claim add`, `session end` (summary), `forget --reason`.
+  - CLI-only, `--force`: `claim add`, `session start` (`--client-id`), `session end` (summary).
   - Not guarded: reads, and writes the server derives itself (`think`, triggers).
   - `correct`: scan the `CorrectRequest` before native `/v1/correct`, so emulation never starts on rejection.
     - Do not scan the old record copied during emulation. It is already stored, and `correct` is the tool used to redact a leaked secret.
@@ -487,7 +487,7 @@ A write that looks like it contains a secret (password, API key, token, private 
     - exit 7, with `findings` in the JSON;
     - the secret never appears in output;
     - `--force`, `--stdin`, and `yrem call` with and without `force`.
-- [x] **6. Docs.** README: exit code 7, the detector list, and the `force` semantics, including what cannot be bypassed.
+- [x] **6. Docs.** README: exit code 7, the detector list, and the `force` semantics, including that `force` bypasses every detector (nothing is unbypassable).
 
 ## Later
 

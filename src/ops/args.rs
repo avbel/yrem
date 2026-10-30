@@ -326,7 +326,7 @@ pub struct ConflictListArgs {
     #[arg(long_help = "Only conflicts involving this entity.", long)]
     pub entity: Option<String>,
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Only rows in this namespace (a row-level tag within the token's database). Omit for no namespace filter.",
         long
     )]
     pub namespace: Option<String>,
@@ -379,7 +379,7 @@ pub struct ConflictDismissArgs {
 #[serde(deny_unknown_fields)]
 pub struct SessionDigestArgs {
     #[arg(
-        long_help = "Scope the briefing to this namespace (a row-level tag within the token's database).",
+        long_help = "Namespace (a row-level tag within the token's database) whose narrative chain heads the briefing. Decisions and conflicts are not limited to it.",
         long
     )]
     pub namespace: Option<String>,
@@ -438,6 +438,13 @@ pub struct SessionStartArgs {
         long
     )]
     pub client_id: Option<String>,
+    /// Store despite a secret-like match.
+    #[arg(
+        long_help = "Waive the secret-like data check (exit 7) and send the data as given. Use only when it is not a secret.",
+        long
+    )]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
@@ -467,7 +474,7 @@ pub struct MemoryGetArgs {
 #[serde(deny_unknown_fields)]
 pub struct MemoryCurrentArgs {
     #[arg(
-        long_help = "Namespace to read (required); the server returns the latest value per fact in it.",
+        long_help = "Namespace to read (required); the server returns the newest active record in it.",
         long
     )]
     pub namespace: String,
@@ -477,7 +484,7 @@ pub struct MemoryCurrentArgs {
 #[serde(deny_unknown_fields)]
 pub struct MemoryListArgs {
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Only rows in this namespace (a row-level tag within the token's database). Omit for no namespace filter.",
         long
     )]
     pub namespace: Option<String>,
@@ -487,7 +494,7 @@ pub struct MemoryListArgs {
     )]
     pub domain: Option<String>,
     #[arg(
-        long_help = "Kind of memory; the server defaults to semantic when omitted.",
+        long_help = "Only memories of this kind. Omit for all kinds.",
         long,
         value_enum
     )]
@@ -496,8 +503,11 @@ pub struct MemoryListArgs {
     pub limit: Option<u32>,
     #[arg(long_help = "Rows to skip, for paging.", long)]
     pub offset: Option<u32>,
-    /// Newest first.
-    #[arg(long_help = "Sort newest first instead of oldest first.", long)]
+    /// Cursor-style response.
+    #[arg(
+        long_help = "Return records and next_cursor instead of items, total and offset. Rows come newest first either way.",
+        long
+    )]
     #[serde(default)]
     pub desc: bool,
 }
@@ -506,7 +516,7 @@ pub struct MemoryListArgs {
 #[serde(deny_unknown_fields)]
 pub struct MemoryGapsArgs {
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Only rows in this namespace (a row-level tag within the token's database). Omit for no namespace filter.",
         long
     )]
     pub namespace: Option<String>,
@@ -530,7 +540,7 @@ pub struct TemporalListArgs {
     #[arg(long_help = "Maximum memories to return.", long)]
     pub limit: Option<u32>,
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Only rows in this namespace (a row-level tag within the token's database). Omit for no namespace filter.",
         long
     )]
     pub namespace: Option<String>,
@@ -555,12 +565,12 @@ pub struct TemporalAsOfArgs {
     #[schemars(range(min = 1, max = 1000))]
     pub top_k: Option<u32>,
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Only rows in this namespace (a row-level tag within the token's database). Omit for no namespace filter.",
         long
     )]
     pub namespace: Option<String>,
     #[arg(
-        long_help = "Kind of memory; the server defaults to semantic when omitted.",
+        long_help = "Only memories of this kind. Omit for all kinds.",
         long,
         value_enum
     )]
@@ -663,7 +673,7 @@ pub struct ClaimListArgs {
     #[arg(long_help = "Entity whose claims to list (as subject or object).")]
     pub entity: String,
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Only rows in this namespace (a row-level tag within the token's database). Omit for no namespace filter.",
         long
     )]
     pub namespace: Option<String>,
@@ -680,7 +690,7 @@ pub struct ProcedureSurfaceArgs {
     #[arg(long_help = "Only procedures with this domain label.", long)]
     pub domain: Option<String>,
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Only procedures in this namespace (a row-level tag within the token's database).",
         long
     )]
     pub namespace: Option<String>,

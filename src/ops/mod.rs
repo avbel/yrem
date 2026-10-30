@@ -40,6 +40,45 @@ pub const TOOLS: [&str; 12] = [
     "memory_current",
 ];
 
+/// Drops the offending value from a serde error, which may be a secret the caller pasted.
+///
+/// Quoted strings are elided, and so is the name in `unknown field` / `unknown variant`; the
+/// expected types and the list of valid names stay.
+fn without_values(msg: &str) -> String {
+    let mut out = String::with_capacity(msg.len());
+    let mut chars = msg.chars();
+    let hide_first_tick =
+        msg.starts_with("unknown field `") || msg.starts_with("unknown variant `");
+    let mut ticks = 0;
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => {
+                out.push_str("\"…\"");
+                while let Some(q) = chars.next() {
+                    match q {
+                        '\\' => {
+                            chars.next();
+                        }
+                        '"' => break,
+                        _ => {}
+                    }
+                }
+            }
+            '`' if hide_first_tick && ticks == 0 => {
+                ticks += 1;
+                out.push_str("`…`");
+                for q in chars.by_ref() {
+                    if q == '`' {
+                        break;
+                    }
+                }
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Shared application state: one HTTP client, cloned cheaply per call.
 #[derive(Debug, Clone)]
 pub struct App {
@@ -58,7 +97,8 @@ impl App {
     /// Unknown tool, arguments that don't match the tool's schema, or the tool's own error.
     pub async fn call(&self, tool: &str, args: Value) -> Result<Value> {
         fn parse<T: serde::de::DeserializeOwned>(tool: &str, v: Value) -> Result<T> {
-            serde_json::from_value(v).map_err(|e| Error::Invalid(format!("{tool}: {e}")))
+            serde_json::from_value(v)
+                .map_err(|e| Error::Invalid(format!("{tool}: {}", without_values(&e.to_string()))))
         }
         let args = if args.is_null() { json!({}) } else { args };
         match tool {
@@ -393,6 +433,7 @@ impl App {
             namespace: args.namespace,
             client_id: args.client_id,
         };
+        guard("session_start", args.force, &req)?;
         Ok(shape(self.client.session_start(&req).await?))
     }
 
