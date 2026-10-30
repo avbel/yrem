@@ -595,6 +595,32 @@ async fn session_digest_include_gaps() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn session_digest_decodes_stringified_maintenance() {
+    let srv = FakeServer::start(vec![
+        Step::get("/v1/session/digest").json(json!({
+            "last_maintenance": "{\"ran_at\":1793378517.90742,\"think_conflicts_found\":0}"
+        })),
+        Step::get("/v1/session/digest").json(json!({ "last_maintenance": "not json" })),
+    ]);
+    let a = app(&srv);
+    let out = a
+        .session_digest(SessionDigestArgs::default())
+        .await
+        .unwrap();
+    assert_eq!(out["last_maintenance"]["think_conflicts_found"], 0);
+    assert_eq!(
+        out["last_maintenance"]["ran_at_iso"],
+        "2026-10-30T16:41:57Z"
+    );
+    let out = a
+        .session_digest(SessionDigestArgs::default())
+        .await
+        .unwrap();
+    assert_eq!(out["last_maintenance"], "not json");
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn session_capture_fixture() {
     let srv = FakeServer::start(vec![
         Step::post("/v1/session/end")

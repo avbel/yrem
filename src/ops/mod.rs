@@ -361,7 +361,9 @@ impl App {
             include_gaps: args.include_gaps.then_some(true),
             ..DigestQuery::default()
         };
-        Ok(shape(self.client.session_digest(&q).await?))
+        Ok(shape(decode_maintenance(
+            self.client.session_digest(&q).await?,
+        )))
     }
 
     pub async fn session_capture(&self, mut args: SessionCaptureArgs) -> Result<Value> {
@@ -431,6 +433,20 @@ impl App {
     pub async fn memory_stats(&self, _args: MemoryStatsArgs) -> Result<Value> {
         Ok(shape(self.client.stats().await?))
     }
+}
+
+/// Server 0.20 sends `last_maintenance` as a JSON-encoded string; decoding it lets
+/// `shape` round its floats and add ISO timestamps like everywhere else.
+fn decode_maintenance(mut digest: Value) -> Value {
+    let decoded = digest
+        .get("last_maintenance")
+        .and_then(Value::as_str)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .filter(Value::is_object);
+    if let Some(v) = decoded {
+        digest["last_maintenance"] = v;
+    }
+    digest
 }
 
 fn remember_request(m: MemoryInput, now: chrono::DateTime<Utc>) -> Result<RememberRequest> {

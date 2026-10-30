@@ -99,7 +99,10 @@ async fn connection_refused_is_unavailable() {
     drop(l);
     let c = Client::new(&config(&format!("http://127.0.0.1:{port}"))).unwrap();
     let e = c.health().await.unwrap_err();
-    assert!(matches!(e, Error::Unavailable(_)), "{e:?}");
+    assert!(
+        matches!(&e, Error::Unavailable(m) if m.to_lowercase().contains("connection refused")),
+        "the OS cause must reach the message: {e}"
+    );
     assert!(e.is_retryable());
 }
 

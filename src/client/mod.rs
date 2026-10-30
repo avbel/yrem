@@ -259,12 +259,21 @@ fn decode<T: serde::de::DeserializeOwned>(op: &str, v: Value) -> Result<T> {
 
 fn transport(e: reqwest::Error) -> Error {
     if e.is_timeout() {
-        Error::Unavailable(format!("request timed out: {e}"))
+        Error::Unavailable(format!("request timed out: {}", with_causes(&e)))
     } else if e.is_connect() {
-        Error::Unavailable(format!("cannot connect: {e}"))
+        Error::Unavailable(format!("cannot connect: {}", with_causes(&e)))
     } else {
         Error::Transport(e)
     }
+}
+
+/// reqwest's `Display` stops at "error sending request"; the OS reason
+/// (refused, unreachable, DNS) is only in the source chain.
+fn with_causes(e: &reqwest::Error) -> String {
+    std::iter::successors(Some(e as &dyn std::error::Error), |e| e.source())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(": ")
 }
 
 /// Maps a non-2xx answer to an [`Error`].

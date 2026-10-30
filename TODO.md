@@ -315,11 +315,13 @@ Toolchain 1.99.1, edition 2024. Use:
 
 ## M5 — Integration
 
-- [ ] Claude Code, MCP route: `claude mcp add --scope user yrem -- yrem mcp`. Credentials come from `~/.config/yrem/config.toml`, so no token lands in `~/.claude.json`.
+- [x] Claude Code, MCP route: `claude mcp add --scope user yrem -- yrem mcp`. Credentials come from `~/.config/yrem/config.toml`, so no token lands in `~/.claude.json`.
 - [ ] Claude Code, CLI route: `~/.claude/skills/yrem/SKILL.md`, a `SessionStart` hook running `yrem digest --hook`, and `Bash(yrem:*)` in `permissions.allow`.
-- [ ] Codex: `[mcp_servers.yrem] command = "yrem"`, `args = ["mcp"]`. Prefer MCP here: shell commands in Codex's workspace-write sandbox have no network by default.
+- [x] Codex: `[mcp_servers.yrem] command = "yrem"`, `args = ["mcp"]`. Prefer MCP here: shell commands in Codex's workspace-write sandbox have no network by default.
 - [ ] Sandbox profiles (SBPL / bubblewrap) wrapping the agents must allow egress to `nas:7438` if the CLI route is used.
-- [ ] Remove yantrikdb-mcp from both clients. Run a side-by-side recall comparison on the real store before switching.
+- [x] Remove yantrikdb-mcp from both clients. Run a side-by-side recall comparison on the real store before switching.
+  - yantrikdb-mcp could not reach the LAN address either, so yrem was compared with raw `POST /v1/recall` instead: same rids and scores. The yantrikdb hook plugins (`yantrikdb-hooks`, `yantrikdb-chatgpt`) are disabled too.
+- macOS Local Network privacy blocks LAN addresses (`192.168.x`) for non-Apple binaries started from a terminal whose permission is off: `EHOSTUNREACH`, while `/usr/bin/curl` works. The config uses the NAS Tailscale address (`100.64.23.221:7438`), which that privacy check does not cover.
 
 ## M6 — Tests and coverage
 
