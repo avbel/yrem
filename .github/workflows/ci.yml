@@ -28,15 +28,29 @@ jobs:
       - run: cargo fmt --check
 
   windows:
-    name: windows build
-    runs-on: windows-latest
+    name: ${{ matrix.os }} build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    env:
+      # aws-lc-sys: use its prebuilt NASM objects instead of requiring NASM (x86_64).
+      AWS_LC_SYS_PREBUILT_NASM: 1
     steps:
       - uses: actions/checkout@v5
+      # windows-11-arm images may lack rustup; this provides it, the pin comes from rust-toolchain.toml.
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install toolchain from rust-toolchain.toml
         run: rustup toolchain install
+      - name: Ensure clang-cl (aws-lc on arm64)
+        if: runner.arch == 'ARM64'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command clang-cl -ErrorAction SilentlyContinue)) { winget install --id LLVM.LLVM -e --silent --accept-source-agreements --accept-package-agreements; "C:\Program Files\LLVM\bin" | Out-File -Append $env:GITHUB_PATH }
       - uses: Swatinem/rust-cache@v2
       - name: Clippy
-        run: cargo clippy --locked
+        run: cargo clippy --locked -- -D warnings
       - name: Build
         run: cargo build --locked
 
@@ -47,7 +61,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        features: ["", "--features tls"]
+        features: ["", "--no-default-features"]
     steps:
       - uses: actions/checkout@v5
       - name: Install toolchain from rust-toolchain.toml

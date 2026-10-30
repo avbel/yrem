@@ -217,6 +217,12 @@ fn https_without_tls_is_invalid() {
     );
 }
 
+#[cfg(feature = "tls")]
+#[test]
+fn https_accepted_with_tls() {
+    assert!(Client::new(&config("https://host")).is_ok());
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn conflicts_query_string() {
     // serde_json::Map is alphabetical, so `limit` precedes `status`; nulls are skipped.

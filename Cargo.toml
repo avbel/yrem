@@ -11,8 +11,8 @@ keywords = ["mcp", "yantrikdb", "agent-memory", "cli"]
 categories = ["command-line-utilities"]
 
 [features]
-default = []
-tls = ["reqwest/rustls"]   # rustls + aws-lc-rs; plain HTTP is enough on LAN
+default = ["tls"]
+tls = ["reqwest/rustls"]   # rustls + aws-lc-rs (C); `--no-default-features` builds a plain-HTTP, C-free binary
 
 [dependencies]
 rmcp = { version = "3.8.0", features = ["transport-io"] }   # defaults: server, macros, base64

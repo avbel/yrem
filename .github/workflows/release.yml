@@ -10,6 +10,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_BUILD_WARNINGS: deny
+  # aws-lc-sys (TLS): use its prebuilt NASM objects on Windows x86_64 instead of requiring NASM.
+  AWS_LC_SYS_PREBUILT_NASM: 1
 
 jobs:
   check-version:
@@ -50,6 +52,11 @@ jobs:
       - name: Install musl tools
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Ensure clang-cl (aws-lc on Windows arm64)
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command clang-cl -ErrorAction SilentlyContinue)) { winget install --id LLVM.LLVM -e --silent --accept-source-agreements --accept-package-agreements; "C:\Program Files\LLVM\bin" | Out-File -Append $env:GITHUB_PATH }
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package (tar.gz)
@@ -97,3 +104,75 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+
+  homebrew:
+    name: Homebrew tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Update avbel/homebrew-tap Formula/yrem.rb
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN is not set; skipping the Homebrew tap update"
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          sha() { cut -d' ' -f1 "dist/yrem-${GITHUB_REF_NAME}-$1.tar.gz.sha256"; }
+          mac_arm=$(sha aarch64-apple-darwin)
+          linux_x64=$(sha x86_64-unknown-linux-musl)
+          linux_arm=$(sha aarch64-unknown-linux-musl)
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/v#{version}/yrem-v#{version}"
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/avbel/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cat > tap/Formula/yrem.rb <<RUBY
+          class Yrem < Formula
+            desc "Remote-only CLI and MCP server for yantrikdb-server"
+            homepage "https://github.com/${GITHUB_REPOSITORY}"
+            version "${version}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "${base}-aarch64-apple-darwin.tar.gz"
+                sha256 "${mac_arm}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "${base}-x86_64-unknown-linux-musl.tar.gz"
+                sha256 "${linux_x64}"
+              end
+              on_arm do
+                url "${base}-aarch64-unknown-linux-musl.tar.gz"
+                sha256 "${linux_arm}"
+              end
+            end
+
+            def install
+              bin.install "yrem"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/yrem --version")
+            end
+          end
+          RUBY
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/yrem.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date"
+            exit 0
+          fi
+          git commit -m "Update yrem to ${version}"
+          git push

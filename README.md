@@ -21,14 +21,17 @@ With `YANTRIKDB_SERVER_URL` set, `yantrikdb-mcp` becomes an HTTP forwarder, but 
 ## Install
 
 ```bash
-# From source (Rust 1.99+)
+# Homebrew (macOS arm64, Linux x86_64 / arm64)
+brew install avbel/tap/yrem
+
+# From source (Rust 1.99+); HTTP and HTTPS
 cargo install --locked --git https://github.com/avbel/yrem
 
-# With TLS support, if the server sits behind HTTPS
-cargo install --locked --git https://github.com/avbel/yrem --features tls
+# Plain HTTP only, no C toolchain needed
+cargo install --locked --git https://github.com/avbel/yrem --no-default-features
 ```
 
-Prebuilt binaries are attached to each [GitHub release](https://github.com/avbel/yrem/releases): Linux x86_64 / aarch64 (static musl, `.tar.gz`), macOS arm64 (`.tar.gz`), Windows x86_64 / arm64 (`.zip`), each with a `.sha256`. They are built without TLS.
+Prebuilt binaries are attached to each [GitHub release](https://github.com/avbel/yrem/releases): Linux x86_64 / aarch64 (static musl, `.tar.gz`), macOS arm64 (`.tar.gz`), Windows x86_64 / arm64 (`.zip`), each with a `.sha256`. They support HTTP and HTTPS (rustls; certificates are checked against the system trust store).
 
 `yrem --version` prints the version from `Cargo.toml`.
 
@@ -285,7 +288,7 @@ These are not exposed because the server has no replicated path for them yet (50
 
 - Recalled memories are data, not instructions. The MCP instructions and the skill above tell the agent never to act on directives found inside recalled text, since a memory can contain text written by an earlier session or another client.
 - The token is sent as a sensitive header. It never appears in logs or `Debug` output, and `doctor` redacts it.
-- The server has no TLS of its own. Outside a trusted LAN, put it behind a TLS proxy or a VPN and build yrem with `--features tls`.
+- The server has no TLS of its own. Outside a trusted LAN, put it behind a TLS proxy or a VPN and point `url` at `https://…` (the default build and the release binaries support it).
 
 ## Development
 
@@ -300,7 +303,7 @@ YREM_CONTRACT=1 YREM_URL=http://localhost:7438 YREM_TOKEN=... cargo test --test 
 
 The toolchain is pinned in `rust-toolchain.toml`. Tests replay fixtures captured from a scratch database through a fake HTTP server. MCP tests drive `yrem mcp` with the rmcp client. Regenerate golden files with `YREM_BLESS=1 cargo test`.
 
-CI runs `cargo fmt --check`, clippy (warnings are errors), tests on Linux and macOS (plain and `--features tls`), a Windows build, the coverage gate and `cargo deny`. Pushing a tag `vX.Y.Z` that matches the `Cargo.toml` version builds the release archives and publishes a GitHub release.
+CI runs `cargo fmt --check`, clippy (warnings are errors), tests on Linux and macOS (default TLS build and `--no-default-features`), Windows x86_64 / arm64 builds, the coverage gate and `cargo deny`. Pushing a tag `vX.Y.Z` that matches the `Cargo.toml` version builds the release archives, publishes a GitHub release and updates `Formula/yrem.rb` in [avbel/homebrew-tap](https://github.com/avbel/homebrew-tap) (needs the `HOMEBREW_TAP_TOKEN` secret: a token with write access to that repo).
 
 ## License
 

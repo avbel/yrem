@@ -229,18 +229,14 @@ impl Client {
 
 /// Accepts `http`, and `https` only in builds with the `tls` feature.
 fn check_scheme(url: &Url) -> Result<()> {
-    match url.scheme() {
-        "http" => Ok(()),
-        "https" => cfg_select! {
-            feature = "tls" => { Ok(()) }
-            _ => {
-                Err(Error::Invalid(
-                    "https URL, but yrem was built without TLS; rebuild with `--features tls`"
-                        .into(),
-                ))
-            }
-        },
-        s => Err(Error::Invalid(format!("unsupported URL scheme `{s}`"))),
+    match (url.scheme(), cfg!(feature = "tls")) {
+        ("http", _) | ("https", true) => Ok(()),
+        ("https", false) => Err(Error::Invalid(
+            "https URL, but yrem was built without TLS (`--no-default-features`); \
+             rebuild with the default `tls` feature"
+                .into(),
+        )),
+        (s, _) => Err(Error::Invalid(format!("unsupported URL scheme `{s}`"))),
     }
 }
 
