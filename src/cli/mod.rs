@@ -237,9 +237,11 @@ fn report(e: &anyhow::Error) -> ExitCode {
     eprintln!("yrem: {e:#}");
     match e.downcast_ref::<Error>() {
         Some(err) => {
-            output::print_raw(
-                &json!({ "error": err.to_string(), "exit_code": err.exit_code() }).to_string(),
-            );
+            let mut body = json!({ "error": err.to_string(), "exit_code": err.exit_code() });
+            if let Error::Sensitive { findings, .. } = err {
+                body["findings"] = json!(findings);
+            }
+            output::print_raw(&body.to_string());
             ExitCode::from(err)
         }
         None => ExitCode::FAILURE,

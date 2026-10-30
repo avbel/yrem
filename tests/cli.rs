@@ -1360,3 +1360,91 @@ fn missing_explicit_config_and_missing_url_exit_1() {
     assert_eq!(out.code, 1);
     assert!(out.stderr.contains("no server URL"), "{}", out.stderr);
 }
+
+fn fake_aws() -> String {
+    format!("AKIA{}", "Z".repeat(16))
+}
+
+#[test]
+fn secret_refusal_exit_code_findings_and_no_leak() {
+    let srv = FakeServer::start(vec![]);
+    let secret = fake_aws();
+    let out = yrem(&srv, &["remember", &format!("key {secret} end")]);
+    assert_eq!(out.code, 7, "{}", out.stderr);
+    let v = out.json();
+    assert_eq!(v["exit_code"], 7);
+    assert_eq!(
+        v["findings"],
+        json!([{"kind": "aws_access_key", "path": "/text", "start": 4, "end": 24}])
+    );
+    assert!(v["error"].as_str().unwrap().contains("force=true"));
+    assert!(!out.stdout.contains(&secret) && !out.stderr.contains(&secret));
+    assert!(srv.requests().is_empty());
+}
+
+#[test]
+fn secret_force_flag_stdin_and_call() {
+    let secret = fake_aws();
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember").fixture("remember_minimal"),
+        Step::post("/v1/remember").fixture("remember_minimal"),
+        Step::post("/v1/remember").fixture("remember_minimal"),
+    ]);
+    ok(&yrem(
+        &srv,
+        &["remember", &format!("k {secret}"), "--force"],
+    ));
+    ok(&yrem_stdin(
+        &srv,
+        &["remember", "--stdin", "--force"],
+        &format!("k {secret}\n"),
+    ));
+    let args = json!({"text": format!("k {secret}"), "force": true}).to_string();
+    ok(&yrem(&srv, &["call", "remember", &args]));
+    srv.assert_done();
+    assert!(srv.requests().iter().all(|r| r.body.get("force").is_none()));
+
+    let none = FakeServer::start(vec![]);
+    let out = yrem_stdin(&none, &["remember", "--stdin"], &format!("k {secret}\n"));
+    assert_eq!(out.code, 7);
+    let args = json!({"text": format!("k {secret}")}).to_string();
+    let out = yrem(&none, &["call", "remember", &args]);
+    assert_eq!(out.code, 7);
+    assert!(!out.stdout.contains(&secret));
+    assert!(none.requests().is_empty());
+}
+
+#[test]
+fn secret_force_stores_private_keys_and_ydb_tokens() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember").fixture("remember_minimal"),
+        Step::post("/v1/remember").fixture("remember_minimal"),
+    ]);
+    let pem = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----";
+    let ydb = format!("ydb_{}", "k".repeat(64));
+    let refused = yrem_stdin(&srv, &["remember", "--stdin"], pem);
+    assert_eq!(refused.code, 7);
+    assert_eq!(refused.json()["findings"][0]["kind"], "private_key");
+    ok(&yrem_stdin(&srv, &["remember", "--stdin", "--force"], pem));
+    ok(&yrem(&srv, &["remember", &ydb, "--force"]));
+    srv.assert_done();
+    let reqs = srv.requests();
+    assert_eq!(reqs[0].body["text"], pem);
+    assert_eq!(reqs[1].body["text"], ydb.as_str());
+    assert!(reqs.iter().all(|r| r.body.get("force").is_none()));
+}
+
+#[test]
+fn secret_guard_on_cli_only_writes() {
+    let srv = FakeServer::start(vec![]);
+    let s = format!("k {}", fake_aws());
+    for args in [
+        vec!["claim", "add", "svc", "uses", &s],
+        vec!["session", "end", "sid", "--summary", &s],
+        vec!["forget", "r1", "--reason", &s],
+        vec!["conflict", "dismiss", "c1", "--note", &s],
+    ] {
+        assert_eq!(yrem(&srv, &args).code, 7, "{args:?}");
+    }
+    assert!(srv.requests().is_empty());
+}

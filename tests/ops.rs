@@ -445,6 +445,7 @@ async fn forget_fixture() {
     ]);
     let out = app(&srv)
         .forget(ForgetArgs {
+            force: false,
             rid: s("r1"),
             reason: Some(s("dup")),
         })
@@ -487,6 +488,7 @@ async fn graph_relate_wire_fields() {
     ]);
     let out = app(&srv)
         .graph_relate(GraphRelateArgs {
+            force: false,
             src: s("Alice"),
             dst: s("Payments"),
             rel_type: s("leads"),
@@ -569,6 +571,7 @@ async fn conflict_resolve_fixture() {
     let a = app(&srv);
     let out = a
         .conflict_resolve(ConflictResolveArgs {
+            force: false,
             id: s(id),
             strategy: Strategy::KeepB,
             new_text: None,
@@ -578,6 +581,7 @@ async fn conflict_resolve_fixture() {
         .unwrap();
     assert_eq!(out["strategy"], "keep_b");
     a.conflict_resolve(ConflictResolveArgs {
+        force: false,
         id: s("c2"),
         strategy: Strategy::Merge,
         new_text: Some(s("merged")),
@@ -597,6 +601,7 @@ async fn conflict_dismiss_uses_dismiss_strategy() {
     ]);
     let out = app(&srv)
         .conflict_dismiss(ConflictDismissArgs {
+            force: false,
             id: s("c1"),
             note: Some(s("noise")),
         })
@@ -669,6 +674,7 @@ async fn session_capture_fixture() {
     ]);
     let out = app(&srv)
         .session_capture(SessionCaptureArgs {
+            force: false,
             summary: s("We reviewed."),
             namespace: Some(s("payments")),
             domain: Some(s("work")),
@@ -707,6 +713,7 @@ async fn session_end_is_delete() {
     ]);
     let out = app(&srv)
         .session_end(SessionEndArgs {
+            force: false,
             session_id: s("01a18d83-61a3-7c63-9b60-158c6e776718"),
             summary: Some(s("Reviewed payments architecture")),
         })
@@ -1156,6 +1163,7 @@ async fn validation_errors_send_nothing() {
     invalid(
         "forget empty rid",
         a.forget(ForgetArgs {
+            force: false,
             rid: s(" "),
             reason: None,
         })
@@ -1252,6 +1260,7 @@ async fn validation_errors_send_nothing() {
     );
 
     let res = |id: &str, strategy, new_text: Option<&str>| ConflictResolveArgs {
+        force: false,
         id: s(id),
         strategy,
         new_text: new_text.map(s),
@@ -1273,6 +1282,7 @@ async fn validation_errors_send_nothing() {
     invalid(
         "dismiss empty id",
         a.conflict_dismiss(ConflictDismissArgs {
+            force: false,
             id: s(""),
             note: None,
         })
@@ -1329,6 +1339,7 @@ async fn clamping_other_ops() {
     .await
     .unwrap();
     a.graph_relate(GraphRelateArgs {
+        force: false,
         src: s("a"),
         dst: s("b"),
         rel_type: s("t"),
@@ -2096,5 +2107,320 @@ async fn task_list_queries() {
         .await
         .unwrap();
     assert_eq!(out["tasks"], json!([]));
+    srv.assert_done();
+}
+
+// ---------------------------------------------------------------- secret guard
+
+fn aws() -> String {
+    format!("AKIA{}", "Z".repeat(16))
+}
+
+fn pem() -> String {
+    "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----".to_owned()
+}
+
+fn refused(r: yrem::Result<Value>, kind: &str, path: &str) -> String {
+    let Err(e @ Error::Sensitive { .. }) = r else {
+        panic!("expected Sensitive, got {r:?}");
+    };
+    let msg = e.to_string();
+    assert!(msg.contains(&format!("{kind} at {path}[")), "{msg}");
+    assert!(!msg.contains("ZZZZ"), "{msg}");
+    msg
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_refuses_secrets_without_a_request() {
+    let srv = FakeServer::start(vec![]);
+    let a = app(&srv);
+    let r = a
+        .remember(RememberArgs {
+            text: Some(format!("key {} here", aws())),
+            ..RememberArgs::default()
+        })
+        .await;
+    let msg = refused(r, "aws_access_key", "/text");
+    assert!(msg.starts_with("remember refused") && msg.contains("force=true"));
+    let r = a
+        .remember(RememberArgs {
+            text: Some(s("fine")),
+            metadata: Some(obj(json!({"db": {"password": "Abcdef12"}}))),
+            ..RememberArgs::default()
+        })
+        .await;
+    refused(r, "credential_field", "/metadata/db/password");
+    assert!(srv.requests().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_batch_refuses_the_whole_batch() {
+    let srv = FakeServer::start(vec![]);
+    let r = app(&srv)
+        .remember(RememberArgs {
+            memories: Some(vec![mem("fine"), mem(&format!("k {}", aws()))]),
+            ..RememberArgs::default()
+        })
+        .await;
+    refused(r, "aws_access_key", "/memories/1/text");
+    assert!(srv.requests().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_force_sends_the_text_verbatim_without_a_force_key() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember").json(json!({"rid": "r1"})),
+        Step::post("/v1/remember/batch").json(json!({"count": 2})),
+    ]);
+    let a = app(&srv);
+    let text = format!("key {} here", aws());
+    a.remember(RememberArgs {
+        text: Some(text.clone()),
+        force: true,
+        ..RememberArgs::default()
+    })
+    .await
+    .unwrap();
+    a.remember(RememberArgs {
+        memories: Some(vec![mem(&text), mem("b")]),
+        force: true,
+        ..RememberArgs::default()
+    })
+    .await
+    .unwrap();
+    srv.assert_done();
+    let reqs = srv.requests();
+    assert_eq!(reqs[0].body["text"], text.as_str());
+    assert!(reqs[0].body.get("force").is_none());
+    assert_eq!(reqs[1].body["memories"][0]["text"], text.as_str());
+    assert!(reqs[1].body.get("force").is_none());
+    assert!(reqs[1].body["memories"][0].get("force").is_none());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn force_stores_private_keys_and_ydb_tokens_verbatim() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember").json(json!({"rid": "r1"})),
+        Step::post("/v1/remember/batch").json(json!({"count": 2})),
+    ]);
+    let a = app(&srv);
+    let ydb = format!("ydb_{}", "k".repeat(64));
+    a.remember(RememberArgs {
+        text: Some(pem()),
+        force: true,
+        ..RememberArgs::default()
+    })
+    .await
+    .unwrap();
+    a.remember(RememberArgs {
+        memories: Some(vec![mem("a"), mem(&ydb)]),
+        force: true,
+        ..RememberArgs::default()
+    })
+    .await
+    .unwrap();
+    srv.assert_done();
+    let reqs = srv.requests();
+    assert_eq!(reqs[0].body["text"], pem().as_str());
+    assert_eq!(reqs[1].body["memories"][1]["text"], ydb.as_str());
+    assert!(reqs.iter().all(|r| r.body.get("force").is_none()));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn private_key_is_refused_without_force() {
+    let srv = FakeServer::start(vec![]);
+    let r = app(&srv)
+        .remember(RememberArgs {
+            text: Some(pem()),
+            ..RememberArgs::default()
+        })
+        .await;
+    let msg = refused(r, "private_key", "/text");
+    assert!(msg.contains("force=true"));
+    assert!(srv.requests().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn guarded_ops_refuse_before_any_request() {
+    let srv = FakeServer::start(vec![]);
+    let a = app(&srv);
+    let secret = format!("token {}", aws());
+    refused(
+        a.correct(CorrectArgs {
+            new_text: Some(secret.clone()),
+            ..correct_args()
+        })
+        .await,
+        "aws_access_key",
+        "/new_text",
+    );
+    refused(
+        a.correct(CorrectArgs {
+            metadata_merge: Some(obj(json!({"api_key": "Abcdef12"}))),
+            ..correct_args()
+        })
+        .await,
+        "credential_field",
+        "/metadata_merge/api_key",
+    );
+    refused(
+        a.session_capture(SessionCaptureArgs {
+            summary: secret.clone(),
+            ..SessionCaptureArgs::default()
+        })
+        .await,
+        "aws_access_key",
+        "/summary",
+    );
+    refused(
+        a.graph_relate(GraphRelateArgs {
+            src: s("svc"),
+            dst: secret.clone(),
+            rel_type: s("uses"),
+            ..GraphRelateArgs::default()
+        })
+        .await,
+        "aws_access_key",
+        "/target",
+    );
+    refused(
+        a.conflict_resolve(ConflictResolveArgs {
+            id: s("c1"),
+            strategy: Strategy::Merge,
+            new_text: Some(secret.clone()),
+            note: None,
+            force: false,
+        })
+        .await,
+        "aws_access_key",
+        "/new_text",
+    );
+    refused(
+        a.conflict_dismiss(ConflictDismissArgs {
+            id: s("c1"),
+            note: Some(secret.clone()),
+            force: false,
+        })
+        .await,
+        "aws_access_key",
+        "/resolution_note",
+    );
+    refused(
+        a.forget(ForgetArgs {
+            rid: s("r1"),
+            reason: Some(secret.clone()),
+            force: false,
+        })
+        .await,
+        "aws_access_key",
+        "/reason",
+    );
+    refused(
+        a.session_end(SessionEndArgs {
+            session_id: s("sid"),
+            summary: Some(secret.clone()),
+            force: false,
+        })
+        .await,
+        "aws_access_key",
+        "/summary",
+    );
+    refused(
+        a.claim_add(yrem::ops::ClaimAddArgs {
+            src: s("svc"),
+            rel_type: s("uses"),
+            dst: secret,
+            ..yrem::ops::ClaimAddArgs::default()
+        })
+        .await,
+        "aws_access_key",
+        "/dst",
+    );
+    assert!(srv.requests().is_empty(), "{:?}", srv.calls());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn force_lets_guarded_ops_through() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/correct").json(json!({"rid": NEW_RID})),
+        Step::post("/v1/session/end").json(json!({})),
+        Step::post("/v1/relate").json(json!({})),
+        Step::post("/v1/forget").json(json!({})),
+    ]);
+    let a = app(&srv);
+    let secret = format!("token {}", aws());
+    a.correct(CorrectArgs {
+        new_text: Some(secret.clone()),
+        force: true,
+        ..correct_args()
+    })
+    .await
+    .unwrap();
+    a.session_capture(SessionCaptureArgs {
+        summary: secret.clone(),
+        force: true,
+        ..SessionCaptureArgs::default()
+    })
+    .await
+    .unwrap();
+    a.graph_relate(GraphRelateArgs {
+        src: s("svc"),
+        dst: secret.clone(),
+        rel_type: s("uses"),
+        force: true,
+        ..GraphRelateArgs::default()
+    })
+    .await
+    .unwrap();
+    a.forget(ForgetArgs {
+        rid: s("r1"),
+        reason: Some(secret),
+        force: true,
+    })
+    .await
+    .unwrap();
+    srv.assert_done();
+    assert!(srv.requests().iter().all(|r| r.body.get("force").is_none()));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn emulated_correct_does_not_scan_the_old_record() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/correct").fixture("correct"),
+        Step::get(&memory_path()).json(json!({
+            "rid": OLD_RID,
+            "text": format!("leaked {}", aws()),
+            "metadata": {"password": "Abcdef12"}
+        })),
+        Step::post("/v1/remember").json(json!({"rid": NEW_RID})),
+        Step::post("/v1/forget").json(json!({"found": true})),
+    ]);
+    let out = app(&srv)
+        .correct(CorrectArgs {
+            new_text: None,
+            ..correct_args()
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["emulated"], true);
+    srv.assert_done();
+    assert_eq!(
+        srv.requests()[2].body["text"],
+        format!("leaked {}", aws()).as_str()
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn correct_redacting_a_secret_is_allowed() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/correct").json(json!({"rid": NEW_RID})),
+    ]);
+    app(&srv)
+        .correct(CorrectArgs {
+            new_text: Some(s("key was <redacted>")),
+            ..correct_args()
+        })
+        .await
+        .unwrap();
     srv.assert_done();
 }

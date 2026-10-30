@@ -7,6 +7,7 @@ pub mod error;
 pub mod mcp;
 pub mod ops;
 pub mod output;
+pub mod secrets;
 pub mod time;
 
 use std::process::ExitCode;

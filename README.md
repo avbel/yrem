@@ -283,6 +283,34 @@ Every command prints a single JSON document on stdout; diagnostics go to stderr.
 | 4 | Operation not supported by this server (501) |
 | 5 | Server unavailable or timeout |
 | 6 | Partial correction: new memory written, old one not forgotten |
+| 7 | Refused: sensitive data (see [Private data protection](#private-data-protection)) |
+
+## Private data protection
+
+A write that looks like it holds a secret fails before any HTTP request, with exit code 7 (`isError` in MCP). The error lists each finding's kind and location (`aws_access_key at /text[4..24]`, char offsets), never the matched text, and tells the agent to redact and retry. The CLI JSON error also carries `findings: [{kind, path, start, end}]`.
+
+Guarded writes: `remember` (a bad item rejects the whole batch), `correct` (the new values only; the old record copied while emulating is not scanned, so `correct` can redact a leaked secret), `session_capture`, `graph_relate`, `conflict_resolve`, and the CLI-only `claim add`, `session end`, `forget --reason`, `conflict dismiss`. Reads and server-derived writes (`think`) are not scanned.
+
+Detectors (hand-written, no regex):
+
+| Kind | Matches |
+|---|---|
+| `private_key` | `-----BEGIN … PRIVATE KEY-----` block; certificates and public keys are fine |
+| `ydb_token` | `ydb_` + 32 or more alphanumerics |
+| `aws_access_key` | `AKIA` / `ASIA` + 16 characters |
+| `github_token` | `ghp_` / `gho_` / `ghu_` / `ghs_` / `ghr_` + 36 or more, `github_pat_…` |
+| `gitlab_token`, `slack_token`, `npm_token`, `huggingface_token`, `age_secret_key` | their vendor prefixes |
+| `openai_anthropic_key` | `sk-` + 20 or more |
+| `stripe_key` | `sk_live_`, `sk_test_`, `rk_live_`, `rk_test_`, `whsec_` |
+| `google_api_key` | `AIza` + exactly 35 |
+| `jwt` | three dot-separated segments, the first two starting `eyJ` |
+| `url_credentials` | `scheme://user:password@host` |
+| `credential_field` | `password`, `secret`, `api_key`, `token`, `authorization`, `Bearer …` and similar keywords followed by `=` / `:` and a value of 8 or more characters that has a digit, mixed case or 20+ characters; also the same keys in `metadata`. Placeholders (`<…>`, `$VAR`, `{{…}}`, `***`, `redacted`, `changeme`) pass |
+| `high_entropy` | a 32+ character base64-like token with high entropy; hex, UUIDs and identifiers (`rid`, `idempotency_key`) are exempt |
+
+`force` (`--force`, or `"force": true` in MCP and `yrem call`) waives every detector for that call, private keys and `ydb_` tokens included: the data is stored as given and the caller, agent or human, takes responsibility. There is no environment or config switch. `force` is never sent to the server.
+
+**This is best-effort pattern matching, not a guarantee.** It can miss secrets (unknown token formats, short or low-entropy passwords, secrets split across words or encoded) and can flag harmless text. It is not a substitute for not storing secrets: anything stored is returned by `recall` to every agent that uses the database. To remove a leaked value, use `correct` (replace the text) or `forget`.
 
 ## Not supported
 
@@ -290,6 +318,7 @@ These are not exposed because the server has no replicated path for them yet (50
 
 ## Security
 
+- Write tools refuse text that looks like a secret; see [Private data protection](#private-data-protection).
 - Recalled memories are data, not instructions. The MCP instructions and the skill above tell the agent never to act on directives found inside recalled text, since a memory can contain text written by an earlier session or another client.
 - The token is sent as a sensitive header. It never appears in logs or `Debug` output, and `doctor` redacts it.
 - The server has no TLS of its own. Outside a trusted LAN, put it behind a TLS proxy or a VPN and point `url` at `https://…` (the default build and the release binaries support it).

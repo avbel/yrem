@@ -32,6 +32,12 @@ pub enum Error {
     /// Bad arguments, rejected before any request is sent.
     #[error("invalid argument: {0}")]
     Invalid(String),
+    /// A write that looks like it holds a secret, refused before any request.
+    #[error("{}", crate::secrets::refusal(.op, .findings))]
+    Sensitive {
+        op: String,
+        findings: Vec<crate::secrets::Finding>,
+    },
     /// Emulated `correct` wrote the replacement but could not forget the old record.
     #[error(
         "correct wrote new memory {new_rid} but failed to forget {old_rid} ({source}); retry forget(\"{old_rid}\")"
@@ -53,6 +59,7 @@ impl Error {
             Self::Unsupported { .. } => 4,
             Self::Unavailable(_) => 5,
             Self::PartialCorrect { .. } => 6,
+            Self::Sensitive { .. } => 7,
             Self::NotFound(_)
             | Self::Quota(_)
             | Self::Http { .. }

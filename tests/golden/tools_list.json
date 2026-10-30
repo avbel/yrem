@@ -52,6 +52,11 @@
         },
         "additionalProperties": false,
         "properties": {
+          "force": {
+            "default": false,
+            "description": "Store despite a secret-like match.",
+            "type": "boolean"
+          },
           "id": {
             "type": "string"
           },
@@ -84,6 +89,11 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "force": {
+            "default": false,
+            "description": "Store despite a secret-like match.",
+            "type": "boolean"
+          },
           "metadata_merge": {
             "additionalProperties": true,
             "type": "object"
@@ -128,6 +138,11 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "force": {
+            "default": false,
+            "description": "Store despite a secret-like match.",
+            "type": "boolean"
+          },
           "reason": {
             "type": "string"
           },
@@ -154,6 +169,11 @@
         "properties": {
           "dst": {
             "type": "string"
+          },
+          "force": {
+            "default": false,
+            "description": "Store despite a secret-like match.",
+            "type": "boolean"
           },
           "namespace": {
             "type": "string"
@@ -370,6 +390,11 @@
             "description": "e.g. work, people, architecture.",
             "type": "string"
           },
+          "force": {
+            "default": false,
+            "description": "Store despite a secret-like match.",
+            "type": "boolean"
+          },
           "idempotency_key": {
             "description": "Retries with the same key store once.",
             "type": "string"
@@ -427,6 +452,11 @@
         "properties": {
           "domain": {
             "type": "string"
+          },
+          "force": {
+            "default": false,
+            "description": "Store despite a secret-like match.",
+            "type": "boolean"
           },
           "namespace": {
             "type": "string"

@@ -96,6 +96,14 @@ fn window_since_after_until_is_invalid() {
 }
 
 #[test]
+fn window_with_equal_bounds_is_valid() {
+    let w = TimeWindow::from_args(Some("1h"), Some("1h"), now())
+        .unwrap()
+        .unwrap();
+    assert_eq!(w.since, w.until);
+}
+
+#[test]
 fn window_bad_bound_is_invalid() {
     assert!(matches!(
         TimeWindow::from_args(Some("zzz"), None, now()),

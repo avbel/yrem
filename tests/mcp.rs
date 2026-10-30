@@ -468,3 +468,45 @@ async fn missing_config_fails_fast() {
     assert_eq!(out.stdout, b"");
     assert!(String::from_utf8_lossy(&out.stderr).contains("no server URL"));
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn secret_guard_refuses_and_force_overrides() {
+    let secret = format!("AKIA{}", "Z".repeat(16));
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember")
+            .body(|b| b.get("force").is_none())
+            .json(json!({"rid": "r1", "log_index": 1})),
+        Step::post("/v1/remember")
+            .body(|b| b.get("force").is_none())
+            .json(json!({"rid": "r2", "log_index": 2})),
+    ]);
+    let c = client(&srv.url).await;
+    let r = c
+        .call_tool(params("remember", json!({"text": format!("key {secret}")})))
+        .await
+        .unwrap();
+    assert_eq!(r.is_error, Some(true));
+    let t = text(&r);
+    assert!(t.contains("force=true") && t.contains("aws_access_key at /text[4..24]"));
+    assert!(!t.contains(&secret));
+    assert!(srv.requests().is_empty());
+
+    let r = c
+        .call_tool(params(
+            "remember",
+            json!({"text": format!("key {secret}"), "force": true}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.is_error, Some(false), "{}", text(&r));
+
+    let pem = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----";
+    let r = c
+        .call_tool(params("remember", json!({"text": pem, "force": true})))
+        .await
+        .unwrap();
+    assert_eq!(r.is_error, Some(false), "{}", text(&r));
+    assert_eq!(srv.requests()[1].body["text"], pem);
+    srv.assert_done();
+    c.cancel().await.unwrap();
+}

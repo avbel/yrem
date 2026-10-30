@@ -146,6 +146,7 @@ async fn lifecycle() {
         .unwrap();
     let sid = session["session_id"].as_str().unwrap().to_owned();
     app.session_end(SessionEndArgs {
+        force: false,
         session_id: sid,
         summary: None,
     })
@@ -153,6 +154,7 @@ async fn lifecycle() {
     .unwrap();
 
     app.forget(ForgetArgs {
+        force: false,
         rid,
         reason: Some("contract cleanup".into()),
     })

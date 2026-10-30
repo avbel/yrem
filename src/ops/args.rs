@@ -118,6 +118,10 @@ pub struct RememberArgs {
     #[serde(skip)]
     #[schemars(skip)]
     pub stdin: bool,
+    /// Store despite a secret-like match.
+    #[arg(long)]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
@@ -161,6 +165,10 @@ pub struct ForgetArgs {
     pub rid: String,
     #[arg(long)]
     pub reason: Option<String>,
+    /// Store despite a secret-like match.
+    #[arg(long)]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
@@ -180,6 +188,10 @@ pub struct CorrectArgs {
     pub new_valence: Option<f64>,
     #[arg(skip)]
     pub metadata_merge: Option<Map<String, Value>>,
+    /// Store despite a secret-like match.
+    #[arg(long)]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
@@ -201,6 +213,10 @@ pub struct GraphRelateArgs {
     pub weight: Option<f64>,
     #[arg(long)]
     pub namespace: Option<String>,
+    /// Store despite a secret-like match.
+    #[arg(long)]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
@@ -235,6 +251,10 @@ pub struct ConflictResolveArgs {
     pub new_text: Option<String>,
     #[arg(long)]
     pub note: Option<String>,
+    /// Store despite a secret-like match.
+    #[arg(long)]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
@@ -243,6 +263,10 @@ pub struct ConflictDismissArgs {
     pub id: String,
     #[arg(long)]
     pub note: Option<String>,
+    /// Store despite a secret-like match.
+    #[arg(long)]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
@@ -270,6 +294,10 @@ pub struct SessionCaptureArgs {
     #[serde(skip)]
     #[schemars(skip)]
     pub stdin: bool,
+    /// Store despite a secret-like match.
+    #[arg(long)]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
@@ -287,6 +315,10 @@ pub struct SessionEndArgs {
     pub session_id: String,
     #[arg(long)]
     pub summary: Option<String>,
+    /// Store despite a secret-like match.
+    #[arg(long)]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
@@ -419,6 +451,10 @@ pub struct ClaimAddArgs {
     #[arg(long)]
     #[schemars(range(min = 0.0, max = 1.0))]
     pub weight: Option<f64>,
+    /// Store despite a secret-like match.
+    #[arg(long)]
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]

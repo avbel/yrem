@@ -3,3 +3,4 @@ config.toml
 *.token
 *.profraw
 lcov.info
+mutants.out*/

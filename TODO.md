@@ -383,6 +383,106 @@ Rule: every module ships with its tests in the same PR. A PR that lowers coverag
 - [ ] Targets: `aarch64-apple-darwin`, `x86_64-unknown-linux-musl` (NAS), `aarch64-unknown-linux-musl`. `tls` is now a default feature (aws-lc-rs, C); `--no-default-features` has no C dependencies. Release builds are static musl with TLS; Windows x64 uses aws-lc prebuilt NASM objects, Windows arm64 needs clang-cl.
 - [ ] Publish to crates.io.
 
+## M8 — Secret guard on writes
+
+A write that looks like it contains a secret (password, API key, token, private key, credentials in a URL) fails before any HTTP request. The error names each finding's kind and location, never the secret itself, and tells the agent to redact and retry, or to retry with `force=true` if in its judgement the data is not secret. Design by Fable (2026-10-30).
+
+- [x] **1. Scanner (`src/secrets.rs`; split into `src/secrets/{mod,detectors}.rs` past 400 lines).** Hand-written; no `regex`, no new crate.
+  - Rejected alternatives:
+    - `regex`: adds 300–500 KB for prefix checks.
+    - `secrets_scanner`: duplicate `thiserror` / `toml` majors.
+    - `leakguard`: a redactor with PII rules, no findings.
+  - `scan(&Value) -> Vec<Finding>` walks every string leaf of the request JSON with its JSON pointer, and JSON object keys for `credential_field`.
+  - `Finding { kind: &'static str, path: String, start, end (char offsets) }`.
+  - Tokenize on whitespace and `"'`,;()[]{}<>`. Keep `. / : = - _ +` inside tokens. Trim trailing `.,;:!?)`. Use `char_indices`, so non-ASCII text never panics.
+  - Detector order: B → A → C → D → E. A token matched earlier is not reported again.
+  - Each detector runs in a single O(n) pass.
+  - **A. Prefixed tokens:**
+
+    | kind | rule |
+    |---|---|
+    | `aws_access_key` | `AKIA` / `ASIA` + 16 `[A-Z0-9]`; length exactly 20 |
+    | `github_token` | `gh[pousr]_` + 36 alnum, or `github_pat_` + ≥ 22 `[A-Za-z0-9_]` |
+    | `gitlab_token` | `glpat-` + ≥ 20 `[A-Za-z0-9_-]` |
+    | `slack_token` | `xox[abprs]-` + ≥ 10 `[A-Za-z0-9-]` |
+    | `openai_anthropic_key` | `sk-` + ≥ 20 `[A-Za-z0-9_-]` |
+    | `stripe_key` | `(sk\|rk)_(live\|test)_` + ≥ 10 alnum; `whsec_` + ≥ 20 |
+    | `google_api_key` | `AIza` + exactly 35 `[0-9A-Za-z_-]` |
+    | `npm_token` | `npm_` + 36 alnum |
+    | `huggingface_token` | `hf_` + ≥ 30 alnum |
+    | `age_secret_key` | `AGE-SECRET-KEY-1` + ≥ 50 `[A-Z0-9]` |
+    | `ydb_token` | `ydb_` + ≥ 32 alnum. Real tokens: 64 alnum, measured. |
+    | `jwt` | three `.`-separated segments; segments 1 and 2 start with `eyJ`; segment 3 is ≥ 16 `[A-Za-z0-9_-]` |
+
+  - **B. `private_key`**: `-----BEGIN ` then `PRIVATE KEY` before the next `-----`. `CERTIFICATE` and `PUBLIC KEY` are not flagged.
+  - **C. `url_credentials`:** the token contains `://`, and the authority (up to `/?#`) holds userinfo with a non-empty password before the last `@`.
+    - Not flagged: `git@github.com:…`, `https://user@host`, `http://host:8080`, `mailto:`.
+  - **D. `credential_field`:**
+    - In text: a keyword followed by `=`, `:` or `=>` and a value.
+      - Keywords, case-insensitive and on a word boundary: `password passwd pwd secret client_secret api_key apikey api-key secret_key private_key access_key aws_secret_access_key access_token auth_token refresh_token token authorization`.
+      - `Bearer <value>` counts as well.
+    - In metadata: a JSON key from the same set with a string value.
+    - The value must:
+      - be ≥ 8 chars with no whitespace;
+      - and contain a digit, or mix upper and lower case, or be ≥ 20 chars;
+      - and not be a placeholder.
+    - Placeholders:
+      - values starting with `<`, `$`, `{{` or `***`;
+      - the words `redacted changeme placeholder null none hidden example`, case-insensitive;
+      - runs of `x…` or `*…`.
+    - Bare `key`, `pass` and `auth` are excluded.
+  - **E. `high_entropy`** (last resort): the token must meet all of these:
+    - length ≥ 32, charset `[A-Za-z0-9+/=_-]`;
+    - Shannon entropy ≥ 4.5 bits/char, so hex (≤ 4.0 bits) never matches;
+    - ≥ 3 digits, ≥ 1 upper and ≥ 1 lower case letter;
+    - not UUID-shaped.
+    - Pointers `/idempotency_key`, `/rid`, `/source_memory_rid` and `/metadata/corrects` are exempt from E only.
+- [x] **2. Error.** `Error::Sensitive { op, findings }`.
+  - Exit code **7** ("refused: sensitive data"); `is_retryable() == false`.
+  - Single-line text, at most 5 findings and then `; +N more`. It never includes the matched text.
+    - One template for every finding: `remember refused: possible secret(s), nothing stored. openai_anthropic_key at /text[41..93]; credential_field at /metadata/password. Redact them (e.g. "<redacted>") and retry; if this is not secret data, retry with force=true.`
+  - CLI JSON error output adds `"findings": [{kind, path, start, end}]`.
+- [x] **3. Guard in the ops layer.** `secrets::guard(op, force, &request)?` runs in each `App` method right before the first `self.client.*` call. It scans the final request struct, so MCP, CLI and `yrem call` share it and nothing is sent on rejection.
+  - MCP tools that get the guard and a `force` arg: `remember` (single and batch: one bad item rejects the whole batch), `correct`, `session_capture`, `graph_relate`, `conflict_resolve`.
+    - `conflict_dismiss` goes through `conflict_resolve` and inherits the guard.
+  - CLI-only, `--force`: `claim add`, `session end` (summary), `forget --reason`.
+  - Not guarded: reads, and writes the server derives itself (`think`, triggers).
+  - `correct`: scan the `CorrectRequest` before native `/v1/correct`, so emulation never starts on rejection.
+    - Do not scan the old record copied during emulation. It is already stored, and `correct` is the tool used to redact a leaked secret.
+- [x] **4. `force` arg.** `pub force: bool` with `#[arg(long)] #[serde(default)]` and the doc comment "Store despite a secret-like match."
+  - It goes on the args structs above, never on `MemoryInput`, and is never serialized into server requests.
+  - It bypasses every detector, `private_key` and `ydb_token` included: with `force` the data is stored no matter what, and the caller (agent or human) takes responsibility.
+  - Per call only; there is no env or config switch.
+  - Cost: about 90 tokens, taking `tools/list` from ~1.75k to ~1.84k of the 2k budget. Regenerate `tests/golden/tools_list.json`.
+  - `instructions.md` and tool descriptions stay unchanged.
+- [x] **5. Tests.**
+  - `tests/secrets.rs`:
+    - one positive and one near-miss negative per detector, pinning each threshold, e.g. `AKIA` + 15 vs 16, `ghp_` + 35 vs 36, `sk-` + 19 vs 20, `AIza` + 34/35/36, credential value 7 vs 8 and 19 vs 20 chars, entropy 31 vs 32 chars, 64-char hex, UUIDv7, paths, camelCase identifiers;
+    - exact path and offsets;
+    - the `+N more` cap;
+    - Cyrillic and emoji offsets;
+    - the nested pointer `/memories/0/metadata/db/password`.
+  - `Error::Sensitive`:
+    - text contains `force=true`, the kind and the pointer, and never the secret;
+    - exit code 7;
+    - not retryable.
+  - `tests/ops.rs`:
+    - each guarded op rejects with an empty fake-server script (no request sent);
+    - `correct` sends no request at all on rejection;
+    - an emulated `correct` of an old record whose text looks secret still runs get → remember → forget;
+    - `force` sends the text verbatim, and the body has no `force` key;
+    - `private_key` and `ydb_token` with `force` are sent verbatim (no `force` key in the body);
+    - the batch path is `/memories/1/text`.
+  - `tests/mcp.rs`:
+    - `isError` text includes `force=true` and not the secret;
+    - `force: true` succeeds;
+    - golden updated and within budget.
+  - `tests/cli.rs`:
+    - exit 7, with `findings` in the JSON;
+    - the secret never appears in output;
+    - `--force`, `--stdin`, and `yrem call` with and without `force`.
+- [x] **6. Docs.** README: exit code 7, the detector list, and the `force` semantics, including what cannot be bypassed.
+
 ## Later
 
 - [ ] Streamable HTTP mode (rmcp `transport-streamable-http-server`, stateless) behind a cargo feature, so the server can be hosted on the NAS and the laptop install dropped entirely.

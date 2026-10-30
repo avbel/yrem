@@ -18,6 +18,7 @@ use crate::client::{
 };
 use crate::error::{Error, Result};
 use crate::output::shape;
+use crate::secrets::guard;
 use crate::time::{self, TimeWindow};
 
 /// MCP tool names, in `tools/list` order. Each has a CLI counterpart.
@@ -104,6 +105,7 @@ impl App {
                 };
                 let mut req = remember_request(input, now)?;
                 req.idempotency_key = args.idempotency_key;
+                guard("remember", args.force, &req)?;
                 Ok(shape(self.client.remember(&req).await?))
             }
             (None, Some(memories)) => {
@@ -119,6 +121,7 @@ impl App {
                     .into_iter()
                     .map(|m| remember_request(m, now))
                     .collect::<Result<Vec<_>>>()?;
+                guard("remember", args.force, &json!({ "memories": &reqs }))?;
                 Ok(shape(self.client.remember_batch(&reqs).await?))
             }
         }
@@ -207,6 +210,7 @@ impl App {
             namespace: None,
             reason: args.reason,
         };
+        guard("forget", args.force, &req)?;
         Ok(shape(self.client.forget(&req).await?))
     }
 
@@ -233,6 +237,7 @@ impl App {
                 .transpose()?,
             metadata_merge: args.metadata_merge,
         };
+        guard("correct", args.force, &req)?;
         match self.client.correct(&req).await {
             Ok(v) => {
                 let mut v = shape(v);
@@ -311,6 +316,7 @@ impl App {
                 .transpose()?,
             namespace: args.namespace,
         };
+        guard("graph_relate", args.force, &req)?;
         Ok(shape(self.client.relate(&req).await?))
     }
 
@@ -343,6 +349,7 @@ impl App {
             new_text: args.new_text,
             resolution_note: args.note,
         };
+        guard("conflict_resolve", args.force, &req)?;
         Ok(shape(self.client.resolve_conflict(&id, &req).await?))
     }
 
@@ -352,6 +359,7 @@ impl App {
             strategy: Strategy::Dismiss,
             new_text: None,
             note: args.note,
+            force: args.force,
         })
         .await
     }
@@ -376,6 +384,7 @@ impl App {
             namespace: args.namespace,
             domain: args.domain,
         };
+        guard("session_capture", args.force, &req)?;
         Ok(shape(self.client.session_capture(&req).await?))
     }
 
@@ -392,6 +401,7 @@ impl App {
         let req = SessionEndRequest {
             summary: args.summary,
         };
+        guard("session_end", args.force, &req)?;
         Ok(shape(self.client.session_end(&id, &req).await?))
     }
 
@@ -532,6 +542,7 @@ impl App {
                 .map(|w| clamp("weight", w, 0.0, 1.0))
                 .transpose()?,
         };
+        guard("claim_add", args.force, &req)?;
         Ok(shape(self.client.claim(&req).await?))
     }
 
