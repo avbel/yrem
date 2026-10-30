@@ -289,6 +289,7 @@ Toolchain 1.99.1, edition 2024. Use:
   - [x] use `#[tool(input_schema = compact_schema::<T>())]` from the start: generate with schemars, strip `$schema`, `title` and integer `format`s; keep `description`, `enum`, `minimum` / `maximum`, `required`
 - [x] Instructions: `src/mcp/instructions.md` (~145 tokens), loaded with `include_str!`. It condenses the upstream golden path (~950 tokens) to 8 lines: digest → recall, remember, correct, memory_current, think, what not to store, and the trust boundary.
 - [ ] Run the official MCP conformance suite against `yrem mcp` in CI.
+  - Blocked: `modelcontextprotocol/conformance` tests servers only over HTTP (`--url`); its stdio harness is not implemented (conformance issue #258). Unblocks with the streamable HTTP mode under [Later](#later), or when the suite gains stdio. Its server scenarios also expect the suite's fixture tools, so most would need an expected-failures baseline.
 
 ## M4 — CLI (`yrem <command>`, clap)
 
@@ -316,7 +317,7 @@ Toolchain 1.99.1, edition 2024. Use:
 ## M5 — Integration
 
 - [x] Claude Code, MCP route: `claude mcp add --scope user yrem -- yrem mcp`. Credentials come from `~/.config/yrem/config.toml`, so no token lands in `~/.claude.json`.
-- [ ] Claude Code, CLI route: `~/.claude/skills/yrem/SKILL.md`, a `SessionStart` hook running `yrem digest --hook`, and `Bash(yrem:*)` in `permissions.allow`.
+- [x] Claude Code, CLI route: skill shipped in the repo (`skills/yrem/SKILL.md`, README shows the symlink install), `SessionStart` hook running `yrem digest --hook` is live. Not installed here: the MCP route is active, and `Bash(yrem:*)` in `permissions.allow` is left to the user.
 - [x] Codex: `[mcp_servers.yrem] command = "yrem"`, `args = ["mcp"]`. Prefer MCP here: shell commands in Codex's workspace-write sandbox have no network by default.
 - [ ] Sandbox profiles (SBPL / bubblewrap) wrapping the agents must allow egress to `nas:7438` if the CLI route is used.
 - [x] Remove yantrikdb-mcp from both clients. Run a side-by-side recall comparison on the real store before switching.
@@ -370,8 +371,8 @@ Rule: every module ships with its tests in the same PR. A PR that lowers coverag
   - [x] `--help` snapshot
   - [x] `digest --hook` truncation at a multi-byte boundary
   - [x] `digest --hook` with the server down: empty stdout, exit 0
-- [ ] **Contract CI job:** docker compose with `yantrikdb-server` pinned to the NAS version; bootstrap a scratch database and token; run the suite with `YREM_CONTRACT=1`. This job also records whether `/v1/correct` is still 501.
-- [ ] **Nightly contract job** against the latest server release to catch API drift. On failure it opens an issue.
+- [x] **Contract CI job** (`.github/workflows/contract.yml`): downloads the `yantrikdb-linux-amd64` release binary pinned to the NAS version (no Docker), bundled embedder, scratch database and token, runs the suite with `YREM_CONTRACT=1`. The job summary records whether `correct` was emulated (`/v1/correct` still 501).
+- [x] **Nightly contract job** (same workflow, `schedule`) against the latest server release to catch API drift. On failure it opens an issue unless one with the same title is open.
 
 ## M7 — Release
 

@@ -1,0 +1,97 @@
+name: Contract
+
+# Pushes and PRs run against the server version the NAS runs; the nightly run
+# takes the latest server release to catch API drift and opens an issue on failure.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  PINNED_SERVER: v0.20.0
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Pick server version
+        id: server
+        run: |
+          if [ "${{ github.event_name }}" = schedule ]; then
+            tag=$(gh release view -R yantrikos/yantrikdb-server --json tagName -q .tagName)
+          else
+            tag=$PINNED_SERVER
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Start yantrikdb-server ${{ steps.server.outputs.tag }}
+        run: |
+          DATA_DIR=$RUNNER_TEMP/ydb
+          gh release download "${{ steps.server.outputs.tag }}" -R yantrikos/yantrikdb-server \
+            -p yantrikdb-linux-amd64 -O "$RUNNER_TEMP/yantrikdb"
+          chmod +x "$RUNNER_TEMP/yantrikdb"
+          # Bundled embedder: no model download from huggingface.co on first start.
+          cat > "$RUNNER_TEMP/ydb.toml" <<EOF
+          [server]
+          data_dir = "$DATA_DIR"
+          http_port = 7438
+          wire_port = 7437
+          [embedding]
+          strategy = "bundled"
+          dim = 64
+          [maintenance]
+          enabled = false
+          EOF
+          "$RUNNER_TEMP/yantrikdb" db --data-dir "$DATA_DIR" create contract
+          token=$("$RUNNER_TEMP/yantrikdb" token --data-dir "$DATA_DIR" create --db contract | grep -o 'ydb_[A-Za-z0-9_-]*')
+          echo "::add-mask::$token"
+          echo "YREM_TOKEN=$token" >> "$GITHUB_ENV"
+          nohup "$RUNNER_TEMP/yantrikdb" serve -c "$RUNNER_TEMP/ydb.toml" > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:7438/v1/health && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/server.log"
+          exit 1
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Contract tests
+        env:
+          YREM_CONTRACT: "1"
+          YREM_URL: http://127.0.0.1:7438
+          YREM_CONFIG: /dev/null
+        run: |
+          set -o pipefail
+          cargo test --locked --test contract -- --nocapture 2>&1 | tee "$RUNNER_TEMP/contract.log"
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## Contract vs yantrikdb-server ${{ steps.server.outputs.tag }}"
+            grep -h 'correct emulated' "$RUNNER_TEMP/contract.log" || echo 'correct: not reached'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Server log
+        if: ${{ failure() }}
+        run: cat "$RUNNER_TEMP/server.log"
+      - name: Open drift issue
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        run: |
+          title="Contract drift vs yantrikdb-server ${{ steps.server.outputs.tag }}"
+          if [ -z "$(gh issue list --state open --search "$title in:title" --json number -q '.[].number')" ]; then
+            gh issue create --title "$title" \
+              --body "Nightly contract run failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
