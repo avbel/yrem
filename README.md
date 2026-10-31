@@ -9,8 +9,6 @@ Remote-only client for [`yantrikdb-server`](https://github.com/yantrikos/yantrik
 
 **Keywords:** yantrikdb, yantrikdb-server, yantrikdb-mcp, MCP server, Model Context Protocol, agent memory, long-term memory, persistent memory, AI coding agent, Claude Code plugin, Claude Code hooks, Codex plugin, OpenCode plugin, pi extension, CLI, Rust.
 
-> **Status: pre-release.** This README describes the target interface. Progress is tracked in [TODO.md](TODO.md).
-
 ## Why not `yantrikdb-mcp` in remote mode?
 
 With `YANTRIKDB_SERVER_URL` set, `yantrikdb-mcp` becomes an HTTP forwarder, but it still installs the full Python package and the Rust engine wheel (~115 MB). It also advertises tools that raise `RemoteUnsupportedError` or hit server endpoints returning 501. In particular, `correct` always fails, even though the agent instructions tell agents to use it. yrem only exposes operations the server can serve, and emulates `correct` (see [Corrections](#corrections)).
