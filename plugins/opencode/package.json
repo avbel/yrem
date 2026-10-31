@@ -1,0 +1,19 @@
+{
+  "name": "@yrem/opencode",
+  "version": "0.2.1",
+  "private": false,
+  "type": "module",
+  "description": "yrem memory hooks for OpenCode (V2): every hook calls the yrem CLI, which holds all the logic.",
+  "author": "Andrey Belchikov (https://github.com/avbel)",
+  "license": "MIT",
+  "keywords": ["yrem", "memory", "recall", "opencode", "opencode-plugin"],
+  "homepage": "https://github.com/avbel/yrem",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/avbel/yrem.git"
+  },
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": ["index.ts"]
+}

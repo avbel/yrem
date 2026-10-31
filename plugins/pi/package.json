@@ -1,0 +1,21 @@
+{
+  "name": "yrem-pi",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "description": "yrem memory hooks for pi",
+  "author": "Andrey Belchikov (https://github.com/avbel)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/avbel/yrem.git"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  }
+}

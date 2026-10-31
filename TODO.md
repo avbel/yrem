@@ -495,3 +495,9 @@ A write that looks like it contains a secret (password, API key, token, private 
 - [ ] Leader discovery via `/v1/health` → `cluster.accepts_writes`, only if the server ever becomes a cluster.
 - [ ] Switch `correct` to native once the server ships RFC 032; the native-first path already handles it. `remember(claims=…)` via `/v1/claim` after the write.
 - [ ] Upstream PR to yantrikdb-mcp `HttpBackend`: it stubs endpoints the server already serves (get, list, temporal, triggers, conversation, tasks read, procedures surface, claims).
+
+## v0.2.1
+
+- [x] `yrem hook <event> --harness claude|codex|plain`: briefing, gated recall, capture, session tracking, `think`; per-session dedup of injected context and captured lines. Replaces `yrem digest --hook`.
+- [x] Harness plugins in `plugins/`: Claude Code, Codex, OpenCode, pi; each only calls `yrem hook`.
+- [ ] Optional near-duplicate check in `remember` (one extra recall per write).

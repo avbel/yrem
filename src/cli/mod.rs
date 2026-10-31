@@ -1,7 +1,6 @@
 //! `yrem <command>`: the clap tree. Leaf commands embed the shared args structs.
 
 pub mod doctor;
-pub mod hook;
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -15,6 +14,7 @@ use serde_json::{Value, json};
 use crate::client::Client;
 use crate::config::{Config, Overrides};
 use crate::error::Error;
+use crate::hook::{Event, Harness};
 use crate::mcp::Server;
 use crate::ops::{
     App, ClaimAddArgs, ClaimListArgs, ConflictDismissArgs, ConflictListArgs, ConflictResolveArgs,
@@ -216,14 +216,11 @@ Example:
     Task(TaskCommand),
     /// Session-start briefing (alias of `session digest`).
     #[command(after_long_help = "\
-With --hook the output is the Claude Code SessionStart hook JSON \
-({\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":...}}), cut \
-to 10,000 characters. It never fails: if the server is unreachable it prints nothing and \
-exits 0.
+For agent hooks use `yrem hook session-start`.
 
 Example:
   yrem digest --namespace work --include-gaps")]
-    Digest(DigestCli),
+    Digest(SessionDigestArgs),
     /// Run an MCP tool with raw JSON arguments.
     #[command(after_long_help = "\
 Tool names are the MCP tools (remember, recall, correct, graph_relate, ...). Fields not \
@@ -234,6 +231,18 @@ Examples:
   yrem call remember '{\"memories\":[{\"text\":\"A\"},{\"text\":\"B\",\"namespace\":\"work\"}]}'
   echo '{\"rid\":\"...\",\"reason\":\"x\",\"metadata_merge\":{\"k\":\"v\"}}' | yrem call correct")]
     Call(CallArgs),
+    /// Agent lifecycle hook for the harness plugins in plugins/.
+    #[command(after_long_help = "\
+Reads the harness's event JSON on stdin ({\"session_id\", \"prompt\", \"source\", \
+\"transcript_path\", \"turns\"}) and prints context to inject: hook JSON for --harness claude \
+or codex, plain text for --harness plain. It never fails: errors go to stderr, the exit code \
+is 0. Settings: YREM_HOOK_* environment variables (see README, Agent hooks).
+
+Examples:
+  echo '{\"session_id\":\"s1\",\"prompt\":\"how do we deploy the billing service\"}' \\
+    | yrem hook prompt --harness plain
+  yrem hook session-end --harness codex --detach < event.json")]
+    Hook(HookCli),
     /// Check config, connectivity, auth and server capabilities.
     Doctor,
     /// Run the MCP server on stdio.
@@ -261,7 +270,7 @@ pub enum ConflictCommand {
 #[derive(Debug, Subcommand)]
 pub enum SessionCommand {
     /// Session-start briefing.
-    Digest(DigestCli),
+    Digest(SessionDigestArgs),
     /// Split a session summary into separate stored facts.
     Capture(SessionCaptureArgs),
     /// Start a tracked session.
@@ -331,12 +340,19 @@ pub enum TaskCommand {
 }
 
 #[derive(Debug, Args)]
-pub struct DigestCli {
-    #[command(flatten)]
-    pub args: SessionDigestArgs,
-    /// Print Claude Code `SessionStart` hook JSON; never fail.
-    #[arg(long)]
-    pub hook: bool,
+pub struct HookCli {
+    /// Lifecycle event.
+    #[arg(value_enum)]
+    pub event: Event,
+    /// Output format of the calling harness.
+    #[arg(long, value_enum, default_value = "plain")]
+    pub harness: Harness,
+    /// Finish in a background process and return at once.
+    #[arg(
+        long,
+        long_help = "Read stdin, hand the work to a background yrem and return at once, for hosts that clamp hook time (Codex SessionEnd: 3 s)."
+    )]
+    pub detach: bool,
 }
 
 #[derive(Debug, Args)]
@@ -396,10 +412,8 @@ async fn execute(cli: Cli, url_from_env: bool, token_from_env: bool) -> anyhow::
         url_from_env,
         token_from_env,
     };
-    if let Command::Digest(d) | Command::Session(SessionCommand::Digest(d)) = &cli.command
-        && d.hook
-    {
-        hook::run(&overrides, d.args.clone()).await;
+    if let Command::Hook(h) = &cli.command {
+        crate::hook::run(&overrides, h.event, h.harness, h.detach).await;
         return Ok(ExitCode::SUCCESS);
     }
     let config = Config::load(&overrides)?;
@@ -424,8 +438,8 @@ async fn execute(cli: Cli, url_from_env: bool, token_from_env: bool) -> anyhow::
         Command::Conflict(ConflictCommand::List(a)) => app.conflict_list(a).await?,
         Command::Conflict(ConflictCommand::Resolve(a)) => app.conflict_resolve(a).await?,
         Command::Conflict(ConflictCommand::Dismiss(a)) => app.conflict_dismiss(a).await?,
-        Command::Session(SessionCommand::Digest(d)) | Command::Digest(d) => {
-            app.session_digest(d.args).await?
+        Command::Session(SessionCommand::Digest(a)) | Command::Digest(a) => {
+            app.session_digest(a).await?
         }
         Command::Session(SessionCommand::Capture(a)) => app.session_capture(a).await?,
         Command::Session(SessionCommand::Start(a)) => app.session_start(a).await?,
@@ -466,7 +480,7 @@ async fn execute(cli: Cli, url_from_env: bool, token_from_env: bool) -> anyhow::
             };
             app.call(&c.tool, args).await?
         }
-        Command::Doctor => unreachable!("handled above"),
+        Command::Doctor | Command::Hook(_) => unreachable!("handled above"),
     };
     output::print(&value, format);
     Ok(ExitCode::SUCCESS)

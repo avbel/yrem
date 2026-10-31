@@ -1,0 +1,53 @@
+{
+  "description": "yrem memory: digest, recall and capture, each a single yrem CLI call.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "yrem hook session-start --harness codex || true",
+            "timeout": 15,
+            "additionalContextLimit": 8000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "yrem hook prompt --harness codex || true",
+            "timeout": 15,
+            "additionalContextLimit": 8000
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "yrem hook pre-compact --harness codex || true",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "yrem hook session-end --harness codex --detach || true",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

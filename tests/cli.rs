@@ -1,5 +1,5 @@
 //! The `yrem` binary end to end: every command against the fake server, stdin handling,
-//! output formats, exit codes, `--help` goldens, `digest --hook`, `doctor` and config files.
+//! output formats, exit codes, `--help` goldens, `doctor` and config files.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -1103,90 +1103,6 @@ fn every_argument_and_subcommand_is_documented() {
     let mut missing = Vec::new();
     walk(&yrem::cli::Cli::command(), "yrem", &mut missing);
     assert!(missing.is_empty(), "undocumented: {missing:#?}");
-}
-
-// ------------------------------------------------------------ digest --hook
-
-fn hook_context(out: &Out) -> String {
-    let v = ok(out);
-    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "SessionStart");
-    v["hookSpecificOutput"]["additionalContext"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
-
-#[test]
-fn digest_hook_success() {
-    let srv = FakeServer::start(vec![
-        Step::get("/v1/session/digest").fixture("session_digest_default"),
-        Step::get("/v1/session/digest?namespace=payments").fixture("session_digest_default"),
-    ]);
-    let out = yrem(&srv, &["digest", "--hook"]);
-    let ctx = hook_context(&out);
-    assert!(ctx.starts_with("Memory briefing"), "{ctx}");
-    assert!(ctx.contains("pending_trigger_count"));
-    assert!(one_line(&out.stdout));
-    let out = yrem(
-        &srv,
-        &["session", "digest", "--hook", "--namespace", "payments"],
-    );
-    hook_context(&out);
-    srv.assert_done();
-}
-
-#[test]
-fn digest_hook_truncates_large_multibyte_digest() {
-    let big = "é🦀 ".repeat(10_000);
-    assert!(big.chars().count() >= 30_000);
-    let srv = FakeServer::start(vec![
-        Step::get("/v1/session/digest").json(json!({"text": big})),
-    ]);
-    let out = yrem(&srv, &["digest", "--hook"]);
-    assert!(
-        out.stdout.trim_end().len() <= 10_000,
-        "{} bytes",
-        out.stdout.len()
-    );
-    let ctx = hook_context(&out);
-    assert!(
-        ctx.ends_with("…[truncated]"),
-        "{:?}",
-        &ctx[ctx.len().saturating_sub(40)..]
-    );
-    assert!(ctx.contains("é🦀"));
-}
-
-#[test]
-fn digest_hook_server_down_prints_nothing() {
-    let url = dead_url();
-    let mut c = base(Some(&url));
-    c.args(["digest", "--hook"]);
-    let out = run(c, None);
-    assert_eq!(out.code, 0);
-    assert!(out.stdout.is_empty(), "{:?}", out.stdout);
-    assert!(!out.stderr.trim().is_empty());
-}
-
-#[test]
-fn digest_hook_auth_failure_prints_nothing() {
-    let srv = FakeServer::start(vec![
-        Step::get("/v1/session/digest").fixture("unauthorized"),
-    ]);
-    let out = yrem(&srv, &["digest", "--hook"]);
-    assert_eq!(out.code, 0);
-    assert!(out.stdout.is_empty());
-    assert!(out.stderr.contains("authentication"), "{}", out.stderr);
-}
-
-#[test]
-fn digest_hook_without_url_prints_nothing() {
-    let mut c = base(None);
-    c.args(["digest", "--hook"]);
-    let out = run(c, None);
-    assert_eq!(out.code, 0);
-    assert!(out.stdout.is_empty());
-    assert!(out.stderr.contains("no server URL"), "{}", out.stderr);
 }
 
 // ------------------------------------------------------------ doctor

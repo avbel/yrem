@@ -7,6 +7,8 @@ Remote-only client for [`yantrikdb-server`](https://github.com/yantrikos/yantrik
 - One Rust struct per operation generates the CLI flags, the `--help` text and the MCP JSON Schema, so the CLI and MCP can't drift apart.
 - Compact agent context: 12 MCP tools in ≤ 2k tokens plus ~150 tokens of instructions. `yantrikdb-mcp` ships 21 tools (≈ 14k tokens) plus ~950 tokens of instructions, and most of those tools fail against a remote server.
 
+**Keywords:** yantrikdb, yantrikdb-server, yantrikdb-mcp, MCP server, Model Context Protocol, agent memory, long-term memory, persistent memory, AI coding agent, Claude Code plugin, Claude Code hooks, Codex plugin, OpenCode plugin, pi extension, CLI, Rust.
+
 > **Status: pre-release.** This README describes the target interface. Progress is tracked in [TODO.md](TODO.md).
 
 ## Why not `yantrikdb-mcp` in remote mode?
@@ -81,36 +83,31 @@ claude mcp add --scope user yrem -- yrem mcp
 
 Claude Code receives the tools and the memory instructions. The agent calls `session_digest` at the start, `remember` / `correct` while working, and `think` after substantial work.
 
-### 2. Claude Code — CLI + SessionStart hook + skill (fewest tokens)
+### 2. Claude Code — plugin + skill (fewest tokens)
 
-The skill is loaded only when relevant. The hook injects the briefing on every session start, without relying on the model to ask for it.
+The [Claude Code plugin](plugins/README.md) runs `yrem hook` on `SessionStart`, `UserPromptSubmit`, `PreCompact` and `SessionEnd`: the briefing and relevant memories reach the context without relying on the model to ask for them. See [Agent hooks](#agent-hooks).
 
-`~/.claude/settings.json`:
-
-```json
-{
-  "permissions": {
-    "allow": ["Bash(yrem:*)"]
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup|resume|compact",
-        "hooks": [
-          { "type": "command", "command": "yrem digest --hook", "timeout": 10 }
-        ]
-      }
-    ]
-  }
-}
+```bash
+claude plugin marketplace add avbel/yrem
+claude plugin install yrem@yrem
 ```
 
-`yrem digest --hook` prints SessionStart JSON (`hookSpecificOutput.additionalContext`), truncated to fit Claude Code's 10,000-character hook output cap. If the server is unreachable it prints nothing and exits 0, so a session never fails to start because of memory.
-
-Install the skill from this repo ([`skills/yrem/SKILL.md`](skills/yrem/SKILL.md)):
+The skill is loaded only when relevant. Install it from this repo ([`skills/yrem/SKILL.md`](skills/yrem/SKILL.md)):
 
 ```bash
 mkdir -p ~/.claude/skills && ln -s "$PWD/skills/yrem" ~/.claude/skills/yrem
+```
+
+To skip the plugin, add the hook to `~/.claude/settings.json` yourself:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "yrem hook session-start --harness claude", "timeout": 15 }] }
+    ]
+  }
+}
 ```
 
 If the agent runs inside a sandbox profile (SBPL, bubblewrap), it must allow egress to the server's host and port.
@@ -311,6 +308,45 @@ Detectors (hand-written, no regex):
 `force` (`--force`, or `"force": true` in MCP and `yrem call`) waives every detector for that call, private keys and `ydb_` tokens included: the data is stored as given and the caller, agent or human, takes responsibility. There is no environment or config switch. `force` is never sent to the server.
 
 **This is best-effort pattern matching, not a guarantee.** It can miss secrets (unknown token formats, short or low-entropy passwords, secrets split across words or encoded) and can flag harmless text. It is not a substitute for not storing secrets: anything stored is returned by `recall` to every agent that uses the database. To remove a leaked value, use `correct` (replace the text) or `forget`.
+
+## Agent hooks
+
+Needs yrem 0.2.1 or newer. `yrem hook <event> --harness claude|codex|plain` is what the [plugins](plugins/README.md) for Claude Code, Codex, OpenCode and pi call. It reads the harness's event JSON on stdin (`session_id`, `prompt`, `source`, `transcript_path`, or `turns` for harnesses without a transcript file) and prints the context to inject: hook JSON for `claude` (the whole JSON cut to 10,000 bytes) and `codex` (8,000), plain text for `plain` (10,000 bytes). It never fails a session: errors go to stderr and the exit code is 0.
+
+| Event | What it does |
+|---|---|
+| `session-start` | Briefing as text: where things stood and up to 5 live decisions (superseded ones dropped). Opens a tracked server session (`client_id` = `<harness>-<session id>`). |
+| `prompt` | Recalls 10 candidates for prompts of 24+ characters (not slash commands) and injects up to 3 that pass the relevance gate. |
+| `pre-compact` | Capture, when enabled. |
+| `session-end` | Capture, closes the tracked session, runs `think`. `--detach` returns at once and finishes in the background, for hosts that clamp hook time. |
+
+What the hooks never repeat:
+
+- The briefing is injected once per session, however many hooks fire it, and again only after `compact` or `clear` (Claude Code; the OpenCode and pi plugins send `clear` once per process, since a resumed session lost its briefing with the old process). A hook killed before the briefing arrived does not block it: its claim is taken over after 30 seconds. The briefing tells the model not to call `session_digest`.
+- Concurrent hooks claim each memory, the tracked session and each captured line with an atomic file create, so parallel hooks split the work instead of repeating it.
+- A memory already shown in the session (in the briefing or an earlier recall) is not repeated.
+- Capture sends each user line at most once per session (watermark shared by `pre-compact` and `session-end`), skips lines already stored (semantic similarity ≥ 0.92), and closes the session without a summary so the server does not draft the same text again. It takes the newest lines first, up to 6,000 characters within 45 seconds; lines left out stay for the next run. Lines that look like a secret or exceed the cap are never sent.
+
+This covers what the hooks write. A `remember` the model makes on its own is not checked against existing memories.
+
+The relevance gate drops auto-captured prompts and consolidation merges made of them, namespaces in `YREM_HOOK_EXCLUDE_NAMESPACES`, scores below 0.10, and hits whose semantic-lane similarity (from `why_retrieved`) is below `YREM_HOOK_MIN_SIMILARITY`. Capture reads user turns only: assistant turns are the model's own claims, and storing them turns a guess into a remembered fact. Harness bookkeeping (system reminders, command echoes, pasted blocks, continuation notices, `AGENTS.md`, Codex blocks not typed by the user) is skipped, and so are SDK-driven Claude Code sessions, `codex exec` runs and Codex subagents. Lines the [secret guard](#private-data-protection) would refuse are kept out, not retried. Injected memory text has `<` and `>` replaced, so a stored memory cannot open or close a tag in the context.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `YREM_HOOK_NAMESPACE` | server default | Namespace for the briefing, recall and capture. |
+| `YREM_HOOK_DIGEST` | `1` | Inject the briefing. |
+| `YREM_HOOK_DECISIONS` | `5` | Live decisions in the briefing. |
+| `YREM_HOOK_MAINTENANCE` | `0` | Also show open conflicts, pending triggers and known gaps. |
+| `YREM_HOOK_RECALL` | `1` | Recall on each prompt. |
+| `YREM_HOOK_TOP_K` | `3` | Hits injected per prompt. |
+| `YREM_HOOK_MIN_SIMILARITY` | `0.50` | Semantic-lane cosine a hit needs; `0` disables. Calibrated for MiniLM-384; about `0.60` suits the 64-dim bundled embedder. |
+| `YREM_HOOK_EXCLUDE_NAMESPACES` | — | Comma-separated namespace prefixes never injected, e.g. `hermes:`. |
+| `YREM_HOOK_CAPTURE` | `0` | Capture user turns at compaction and session end. Also lets recall inject captured rows. |
+| `YREM_HOOK_THINK` | `1` | Run `think` at session end. |
+| `YREM_HOOK_TRACK_SESSION` | `1` | Open and close a tracked server session. |
+| `YREM_HOOK_STATE_DIR` | `$XDG_CACHE_HOME/yrem/hooks` (`~/.cache/yrem/hooks`) | Per-session state; files untouched for 7 days are deleted. |
+
+A server that does not answer is skipped for 60 seconds, so a dead server costs one failed request per minute rather than a delay on every prompt.
 
 ## Not supported
 

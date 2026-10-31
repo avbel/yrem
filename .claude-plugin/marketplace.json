@@ -1,0 +1,19 @@
+{
+  "name": "yrem",
+  "owner": {
+    "name": "Andrey Belchikov",
+    "url": "https://github.com/avbel"
+  },
+  "description": "yrem memory hooks for Claude Code.",
+  "plugins": [
+    {
+      "name": "yrem",
+      "displayName": "yrem",
+      "source": "./plugins/claude",
+      "description": "Session digest, relevance-gated recall per prompt and capture, all delegated to the yrem CLI.",
+      "version": "0.2.1",
+      "license": "MIT",
+      "keywords": ["memory", "yrem", "hooks"]
+    }
+  ]
+}

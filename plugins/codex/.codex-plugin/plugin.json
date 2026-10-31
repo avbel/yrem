@@ -1,0 +1,31 @@
+{
+  "name": "yrem",
+  "version": "0.2.1",
+  "description": "Memory hooks for Codex: every hook calls the yrem CLI, which holds all the logic.",
+  "author": {
+    "name": "Andrey Belchikov",
+    "url": "https://github.com/avbel"
+  },
+  "homepage": "https://github.com/avbel/yrem",
+  "repository": "https://github.com/avbel/yrem",
+  "license": "MIT",
+  "keywords": [
+    "yrem",
+    "memory",
+    "hooks",
+    "codex"
+  ],
+  "interface": {
+    "displayName": "yrem",
+    "shortDescription": "Persistent memory hooks backed by the yrem CLI.",
+    "longDescription": "Injects the yrem session digest and relevance-gated recall, and captures before compaction and at session end. Every hook is a single yrem CLI call.",
+    "developerName": "Andrey Belchikov",
+    "category": "Productivity",
+    "capabilities": [
+      "Memory",
+      "Lifecycle hooks"
+    ],
+    "websiteURL": "https://github.com/avbel/yrem"
+  },
+  "skills": "./skills/"
+}

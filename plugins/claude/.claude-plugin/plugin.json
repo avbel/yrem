@@ -1,0 +1,14 @@
+{
+  "name": "yrem",
+  "displayName": "yrem",
+  "description": "Memory hooks for Claude Code: every hook calls the yrem CLI, which holds all the logic.",
+  "version": "0.2.1",
+  "author": {
+    "name": "Andrey Belchikov",
+    "url": "https://github.com/avbel"
+  },
+  "homepage": "https://github.com/avbel/yrem",
+  "repository": "https://github.com/avbel/yrem",
+  "license": "MIT",
+  "keywords": ["memory", "yrem", "hooks", "context", "recall"]
+}

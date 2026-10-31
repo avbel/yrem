@@ -1,5 +1,5 @@
 Persistent memory shared across sessions. Use it without being asked.
-- Session start: session_digest once, then recall for the topic at hand.
+- Session start: session_digest once unless a briefing is in context, then recall the topic.
 - Durable fact learned (decision, preference, person, project context): remember. Specific, self-contained text.
 - Stored fact changed: correct, never a second remember.
 - Latest value of something that changes: memory_current, not recall.
