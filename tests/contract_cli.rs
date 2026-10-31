@@ -231,12 +231,34 @@ fn lifecycle() {
             .ok()
             .is_object()
     );
-    let hook = yrem(&["digest", "--hook"]).ok();
-    assert_eq!(
-        hook["hookSpecificOutput"]["hookEventName"], "SessionStart",
-        "{hook}"
-    );
-    assert!(hook["hookSpecificOutput"]["additionalContext"].is_string());
+    let state = std::env::temp_dir().join(format!("yrem-contract-hook-{}", std::process::id()));
+    let state = state.to_string_lossy().into_owned();
+    let hook_env = [
+        ("YREM_HOOK_STATE_DIR", state.as_str()),
+        ("YREM_HOOK_TRACK_SESSION", "0"),
+    ];
+    for (event, input) in [
+        ("session-start", r#"{"session_id":"contract"}"#),
+        (
+            "prompt",
+            r#"{"session_id":"contract","prompt":"which database does the payments service use"}"#,
+        ),
+    ] {
+        let out = spawn(
+            &hook_env,
+            &["hook", event, "--harness", "claude"],
+            Some(input),
+        );
+        assert_eq!(out.code, 0, "{event}: {}", out.stderr);
+        assert!(out.stderr.is_empty(), "{event}: {}", out.stderr);
+        if !out.stdout.trim().is_empty() {
+            let v = out.json();
+            assert!(
+                v["hookSpecificOutput"]["additionalContext"].is_string(),
+                "{v}"
+            );
+        }
+    }
 
     let doctor = yrem(&["doctor"]).ok();
     assert_eq!(doctor["ok"], true, "{doctor}");
