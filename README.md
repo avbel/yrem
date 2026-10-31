@@ -7,8 +7,6 @@ Remote-only client for [`yantrikdb-server`](https://github.com/yantrikos/yantrik
 - One Rust struct per operation generates the CLI flags, the `--help` text and the MCP JSON Schema, so the CLI and MCP can't drift apart.
 - Compact agent context: 12 MCP tools in ≤ 2k tokens plus ~150 tokens of instructions. `yantrikdb-mcp` ships 21 tools (≈ 14k tokens) plus ~950 tokens of instructions, and most of those tools fail against a remote server.
 
-**Keywords:** yantrikdb, yantrikdb-server, yantrikdb-mcp, MCP server, Model Context Protocol, agent memory, long-term memory, persistent memory, AI coding agent, Claude Code plugin, Claude Code hooks, Codex plugin, OpenCode plugin, pi extension, CLI, Rust.
-
 ## Why not `yantrikdb-mcp` in remote mode?
 
 With `YANTRIKDB_SERVER_URL` set, `yantrikdb-mcp` becomes an HTTP forwarder, but it still installs the full Python package and the Rust engine wheel (~115 MB). It also advertises tools that raise `RemoteUnsupportedError` or hit server endpoints returning 501. In particular, `correct` always fails, even though the agent instructions tell agents to use it. yrem only exposes operations the server can serve, and emulates `correct` (see [Corrections](#corrections)).
@@ -370,7 +368,6 @@ YREM_CONTRACT=1 YREM_URL=http://localhost:7438 YREM_TOKEN=... cargo test --test 
 
 The toolchain is pinned in `rust-toolchain.toml`. Tests replay fixtures captured from a scratch database through a fake HTTP server. MCP tests drive `yrem mcp` with the rmcp client. Regenerate golden files with `YREM_BLESS=1 cargo test`.
 
-CI runs `cargo fmt --check`, clippy (warnings are errors), tests on Linux and macOS (default TLS build and `--no-default-features`), Windows x86_64 / arm64 builds, the coverage gate and `cargo deny`. The Contract workflow runs `tests/contract.rs` (library) and `tests/contract_cli.rs` (the `yrem` binary) against the pinned `yantrikdb-server` release binary on every push, and nightly against the latest release. Pushing a tag `vX.Y.Z` that matches the `Cargo.toml` version builds the release archives, publishes a GitHub release and updates `Formula/yrem.rb` in [avbel/homebrew-tap](https://github.com/avbel/homebrew-tap) (needs the `HOMEBREW_TAP_TOKEN` secret: a token with write access to that repo).
 
 ## License
 
