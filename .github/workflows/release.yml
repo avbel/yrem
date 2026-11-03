@@ -18,7 +18,7 @@ jobs:
     name: tag matches Cargo.toml
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Compare tag and package version
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -41,7 +41,7 @@ jobs:
           - { target: x86_64-pc-windows-msvc, os: windows-latest }
           - { target: aarch64-pc-windows-msvc, os: windows-11-arm }
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # Provides rustup on runners that lack it; the pinned toolchain comes from rust-toolchain.toml.
       - uses: dtolnay/rust-toolchain@stable
       - name: Install pinned toolchain and target

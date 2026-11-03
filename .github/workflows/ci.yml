@@ -22,7 +22,7 @@ jobs:
     name: fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install toolchain from rust-toolchain.toml
         run: rustup show active-toolchain || rustup toolchain install
       - run: cargo fmt --check
@@ -38,7 +38,7 @@ jobs:
       # aws-lc-sys: use its prebuilt NASM objects instead of requiring NASM (x86_64).
       AWS_LC_SYS_PREBUILT_NASM: 1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # windows-11-arm images may lack rustup; this provides it, the pin comes from rust-toolchain.toml.
       - uses: dtolnay/rust-toolchain@stable
       - name: Install toolchain from rust-toolchain.toml
@@ -63,7 +63,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         features: ["", "--no-default-features"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install toolchain from rust-toolchain.toml
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -78,7 +78,7 @@ jobs:
     name: coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install toolchain from rust-toolchain.toml
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -110,7 +110,7 @@ jobs:
     name: cargo-deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny@0.20.2
