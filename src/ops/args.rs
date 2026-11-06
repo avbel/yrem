@@ -76,6 +76,25 @@ pub struct MemoryInput {
     pub created_at: Option<String>,
 }
 
+impl MemoryInput {
+    /// Takes each field this item leaves unset from `defaults`; `text` is never inherited.
+    #[must_use]
+    pub fn or(self, defaults: &Self) -> Self {
+        Self {
+            text: self.text,
+            memory_type: self.memory_type.or(defaults.memory_type),
+            importance: self.importance.or(defaults.importance),
+            valence: self.valence.or(defaults.valence),
+            certainty: self.certainty.or(defaults.certainty),
+            domain: self.domain.or_else(|| defaults.domain.clone()),
+            source: self.source.or_else(|| defaults.source.clone()),
+            namespace: self.namespace.or_else(|| defaults.namespace.clone()),
+            metadata: self.metadata.or_else(|| defaults.metadata.clone()),
+            created_at: self.created_at.or_else(|| defaults.created_at.clone()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RememberArgs {
@@ -142,7 +161,7 @@ pub struct RememberArgs {
         long
     )]
     pub idempotency_key: Option<String>,
-    /// Batch, instead of text.
+    /// Batch, instead of text; other fields are per-item defaults.
     #[arg(skip)]
     pub memories: Option<Vec<MemoryInput>>,
     /// Read the text from stdin.

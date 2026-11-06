@@ -406,7 +406,7 @@
             "type": "number"
           },
           "memories": {
-            "description": "Batch, instead of text.",
+            "description": "Batch, instead of text; other fields are per-item defaults.",
             "items": {
               "$ref": "#/$defs/MemoryInput"
             },

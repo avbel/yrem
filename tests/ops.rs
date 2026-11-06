@@ -143,6 +143,48 @@ async fn remember_batch_fixture() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn remember_batch_takes_unset_item_fields_from_top_level() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember/batch").fixture("remember_batch"),
+    ]);
+    let memories = vec![
+        MemoryInput {
+            text: s("pocketbook-sync serves the NAS books directory"),
+            ..MemoryInput::default()
+        },
+        MemoryInput {
+            text: s("PocketBook dropbear rejects the right password at times"),
+            namespace: Some(s("devices")),
+            importance: Some(0.4),
+            ..MemoryInput::default()
+        },
+    ];
+    app(&srv)
+        .remember(RememberArgs {
+            memories: Some(memories),
+            namespace: Some(s("pocketbook-sync")),
+            domain: Some(s("architecture")),
+            importance: Some(0.85),
+            certainty: Some(0.95),
+            ..RememberArgs::default()
+        })
+        .await
+        .unwrap();
+    srv.assert_done();
+    let items = srv.requests()[0].body["memories"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(items[0]["namespace"], "pocketbook-sync");
+    assert_eq!(items[0]["domain"], "architecture");
+    assert_eq!(items[0]["importance"], 0.85);
+    assert_eq!(items[0]["certainty"], 0.95);
+    assert_eq!(items[1]["namespace"], "devices", "item value wins");
+    assert_eq!(items[1]["importance"], 0.4, "item value wins");
+    assert_eq!(items[1]["domain"], "architecture");
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn remember_clamps_and_parses_created_at() {
     let srv = FakeServer::start(vec![Step::post("/v1/remember").fixture("remember_minimal")]);
     app(&srv)

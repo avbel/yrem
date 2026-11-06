@@ -145,9 +145,10 @@ yrem remember "Payments service migrated from MySQL to PostgreSQL" \
 # Store long text from a pipe
 git log -1 --format=%B | yrem remember --stdin --memory-type episodic --namespace payments
 
-# Batch, or any MCP-only argument: call a tool with its raw MCP arguments
+# Batch, or any MCP-only argument: call a tool with its raw MCP arguments.
+# Top-level fields are defaults for every item; an item's own value wins.
 yrem call remember <<'EOF'
-{"memories": [
+{"namespace": "payments", "memories": [
   {"text": "Alice leads the payments team", "domain": "people"},
   {"text": "Payments deploys freeze on Fridays", "domain": "work", "importance": 0.7}
 ]}

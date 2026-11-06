@@ -127,22 +127,23 @@ impl App {
             args.text = Some(read_stdin()?);
         }
         let now = Utc::now();
+        let defaults = MemoryInput {
+            text: String::new(),
+            memory_type: args.memory_type,
+            importance: args.importance,
+            valence: args.valence,
+            certainty: args.certainty,
+            domain: args.domain,
+            source: args.source,
+            namespace: args.namespace,
+            metadata: args.metadata,
+            created_at: args.created_at,
+        };
         match (args.text.take(), args.memories.take()) {
             (Some(_), Some(_)) => Err(Error::Invalid("give `text` or `memories`, not both".into())),
             (None, None) => Err(Error::Invalid("`text` is required".into())),
             (Some(text), None) => {
-                let input = MemoryInput {
-                    text,
-                    memory_type: args.memory_type,
-                    importance: args.importance,
-                    valence: args.valence,
-                    certainty: args.certainty,
-                    domain: args.domain,
-                    source: args.source,
-                    namespace: args.namespace,
-                    metadata: args.metadata,
-                    created_at: args.created_at,
-                };
+                let input = MemoryInput { text, ..defaults };
                 let mut req = remember_request(input, now)?;
                 req.idempotency_key = args.idempotency_key;
                 guard("remember", args.force, &req)?;
@@ -159,7 +160,7 @@ impl App {
                 }
                 let reqs = memories
                     .into_iter()
-                    .map(|m| remember_request(m, now))
+                    .map(|m| remember_request(m.or(&defaults), now))
                     .collect::<Result<Vec<_>>>()?;
                 guard("remember", args.force, &json!({ "memories": &reqs }))?;
                 Ok(shape(self.client.remember_batch(&reqs).await?))
