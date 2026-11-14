@@ -1,6 +1,6 @@
 [package]
 name = "yrem"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -16,7 +16,7 @@ tls = ["reqwest/rustls"]   # rustls + aws-lc-rs (C); `--no-default-features` bui
 
 [dependencies]
 rmcp = { version = "3.8.0", features = ["transport-io"] }   # defaults: server, macros, base64
-tokio = { version = "1.54.1", features = ["rt", "macros"] }
+tokio = { version = "1.54.1", features = ["rt", "macros", "time"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 schemars = "1.2.3"

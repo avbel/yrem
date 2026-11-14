@@ -21,7 +21,7 @@
             "type": "string"
           },
           "status": {
-            "description": "open, resolved or dismissed.",
+            "description": "open or resolved.",
             "type": "string"
           }
         },
@@ -85,10 +85,15 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Replace a changed fact. New record links the old rid; created_at becomes now.",
+      "description": "Replace a changed fact. New record links the old rid and keeps created_at.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "cascade": {
+            "default": false,
+            "description": "Also forget merge sources.",
+            "type": "boolean"
+          },
           "force": {
             "default": false,
             "description": "Store despite a secret-like match.",
@@ -117,6 +122,11 @@
           },
           "rid": {
             "type": "string"
+          },
+          "sensitive": {
+            "default": false,
+            "description": "Hooks never inject it.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -134,10 +144,15 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Delete a memory by rid.",
+      "description": "Delete a memory by rid. Text stays on the server; cascade also forgets merge sources.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "cascade": {
+            "default": false,
+            "description": "Also forget merge sources.",
+            "type": "boolean"
+          },
           "force": {
             "default": false,
             "description": "Store despite a secret-like match.",
@@ -245,7 +260,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Semantic search over memories. Returns ranked hits with rids.",
+      "description": "Semantic search over memories. Ranked hits with 300-character snippets; memory_get for full text.",
       "inputSchema": {
         "$defs": {
           "MemoryType": {
@@ -270,6 +285,11 @@
         "properties": {
           "domain": {
             "type": "string"
+          },
+          "full": {
+            "default": false,
+            "description": "Full text and metadata, not snippets.",
+            "type": "boolean"
           },
           "memory_type": {
             "$ref": "#/$defs/MemoryType"
@@ -299,6 +319,11 @@
           "since": {
             "description": "Time or span back from now (7d).",
             "type": "string"
+          },
+          "skip_reinforce": {
+            "default": false,
+            "description": "Do not strengthen the hits.",
+            "type": "boolean"
           },
           "top_k": {
             "maximum": 100,
@@ -350,6 +375,9 @@
               },
               "namespace": {
                 "type": "string"
+              },
+              "sensitive": {
+                "type": "boolean"
               },
               "source": {
                 "type": "string"
@@ -421,6 +449,11 @@
           },
           "namespace": {
             "type": "string"
+          },
+          "sensitive": {
+            "default": false,
+            "description": "Hooks never inject it.",
+            "type": "boolean"
           },
           "source": {
             "description": "e.g. user, document, inference.",

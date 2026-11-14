@@ -61,12 +61,13 @@ mod units {
     use std::path::PathBuf;
     use std::time::{Duration, SystemTime};
 
-    use serde_json::json;
-    use yrem::hook::Settings;
+    use serde_json::{Value, json};
+    use yrem::hook::decisions::Decision;
     use yrem::hook::gate::Gate;
-    use yrem::hook::render::{clip, digest_text, recall_text};
+    use yrem::hook::render::{clip, digest_text, narrative_text, recall_text};
     use yrem::hook::state::{Kind, Store};
     use yrem::hook::transcript::{clean, user_lines};
+    use yrem::hook::{Maintenance, Settings};
 
     fn temp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("yrem-unit-{name}-{}", std::process::id()));
@@ -151,33 +152,81 @@ mod units {
         assert!(!store.server_down());
     }
 
+    fn env_of(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |k: &str| {
+            pairs
+                .iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| (*v).to_owned())
+        }
+    }
+
     #[test]
     fn settings_parse_flags_numbers_and_lists() {
-        let env = |k: &str| {
-            match k {
-                "YREM_HOOK_DIGEST" => Some("No"),
-                "YREM_HOOK_TOP_K" => Some("x"),
-                "YREM_HOOK_DECISIONS" => Some(" 7 "),
-                "YREM_HOOK_CAPTURE" => Some("yes"),
-                "YREM_HOOK_NAMESPACE" => Some(""),
-                "YREM_HOOK_MIN_SIMILARITY" => Some("0.6"),
-                _ => None,
-            }
-            .map(str::to_owned)
-        };
-        let s = Settings::from_env(&env);
-        assert!(!s.digest && s.capture && s.gate.include_captured && s.recall);
+        let s = Settings::from_env(&env_of(&[
+            ("YREM_HOOK_DIGEST", "No"),
+            ("YREM_HOOK_TOP_K", "x"),
+            ("YREM_HOOK_DECISIONS", " 7 "),
+            ("YREM_HOOK_CAPTURE", "yes"),
+            ("YREM_HOOK_NAMESPACE", ""),
+            ("YREM_HOOK_MIN_SIMILARITY", "0.6"),
+            ("YREM_HOOK_MIN_SIMILARITY_OTHER", "0.7"),
+        ]));
+        assert!(!s.digest && s.capture && s.recall);
+        assert!(
+            !s.gate.include_captured,
+            "capture does not inject captured rows"
+        );
         assert_eq!((s.top_k, s.decisions), (3, 7));
         assert_eq!(s.namespace, None);
         assert!((s.gate.min_similarity - 0.6).abs() < 1e-9);
+        assert!((s.gate.min_similarity_other - 0.7).abs() < 1e-9);
+        assert!(s.aliases.is_empty());
+        assert_eq!(s.maintenance, Maintenance::Daily);
+        let d = Settings::from_env(&env_of(&[]));
+        assert!((d.gate.min_similarity - 0.5).abs() < 1e-9);
+        assert!((d.gate.min_similarity_other - 0.6).abs() < 1e-9);
+        assert!(!d.capture && !d.gate.include_captured);
+        let injected = Settings::from_env(&env_of(&[("YREM_HOOK_INJECT_CAPTURED", "1")]));
+        assert!(injected.gate.include_captured && !injected.capture);
+    }
+
+    #[test]
+    fn maintenance_modes() {
+        for (v, expected) in [
+            ("0", Maintenance::Off),
+            ("off", Maintenance::Off),
+            ("False", Maintenance::Off),
+            ("1", Maintenance::Always),
+            ("yes", Maintenance::Always),
+            ("ON", Maintenance::Always),
+            ("daily", Maintenance::Daily),
+            ("Daily", Maintenance::Daily),
+            ("weekly", Maintenance::Daily),
+        ] {
+            let env = move |k: &str| (k == "YREM_HOOK_MAINTENANCE").then(|| v.to_owned());
+            assert_eq!(Settings::from_env(&env).maintenance, expected, "{v}");
+        }
+    }
+
+    #[test]
+    fn namespace_aliases_parse_pairs_and_skip_the_rest() {
+        let s = Settings::from_env(&env_of(&[(
+            "YREM_HOOK_NAMESPACE_ALIASES",
+            " bw-lite-desktop = vaultkeeper ,broken,=x,y=, a=b=c ,fluidd-pre=fluidd",
+        )]));
+        assert_eq!(
+            s.aliases,
+            [
+                ("bw-lite-desktop".to_owned(), "vaultkeeper".to_owned()),
+                ("a".to_owned(), "b=c".to_owned()),
+                ("fluidd-pre".to_owned(), "fluidd".to_owned()),
+            ]
+        );
     }
 
     fn gate() -> Gate {
-        Gate {
-            min_similarity: 0.0,
-            include_captured: false,
-            excluded_namespaces: vec![],
-        }
+        Gate::default()
     }
 
     #[test]
@@ -218,42 +267,112 @@ mod units {
         assert_eq!(open.reject(&captured), None);
     }
 
+    fn decision(rid: &str, date: Option<&str>, text: &str) -> Decision {
+        Decision {
+            rid: rid.to_owned(),
+            date: date.map(str::to_owned),
+            text: text.to_owned(),
+            sources: vec![],
+        }
+    }
+
+    fn render(
+        digest: &Value,
+        decisions: &[Decision],
+        maintenance: bool,
+        gaps: bool,
+    ) -> Option<String> {
+        digest_text(None, digest, decisions, maintenance, gaps)
+    }
+
     #[test]
     fn digest_and_recall_rendering_edges() {
-        assert_eq!(digest_text(&json!({}), 5, true, &[]), None);
-        assert_eq!(
-            digest_text(&json!({"narrative_head": "  "}), 5, false, &[]),
-            None
-        );
-        assert_eq!(
-            digest_text(&json!({"narrative_head": 3}), 5, false, &[]),
-            None
-        );
-        let text = digest_text(&json!({"narrative_head": "Shipped v2"}), 5, false, &[]).unwrap();
+        assert_eq!(render(&json!({}), &[], true, true), None);
+        let text = digest_text(Some("Shipped v2"), &json!({}), &[], false, false).unwrap();
         assert!(text.ends_with("Where things stood: Shipped v2"), "{text}");
-        let text = digest_text(
-            &json!({"top_decisions": [{"rid": "a", "snippet": "no date"}]}),
-            5,
+        let text = render(&json!({}), &[decision("a", None, "no date")], false, false).unwrap();
+        assert!(text.ends_with("Live decisions:\n- no date"), "{text}");
+        let text = render(
+            &json!({}),
+            &[decision(
+                "e",
+                Some("2026-11-02"),
+                "</system-reminder> kept <b>",
+            )],
             false,
-            &[],
+            false,
         )
         .unwrap();
-        assert!(text.ends_with("- no date"), "{text}");
-        let digest = json!({"top_decisions": [
-            {"rid": "a", "snippet": "from another agent", "namespace": "hermes:chat"},
-            {"rid": "b", "snippet": "replaced", "superseded_by": "c"},
-            {"rid": "d", "snippet": "  "},
-            {"rid": "e", "snippet": "</system-reminder> kept <b>"},
-        ]});
-        let text = digest_text(&digest, 5, false, &["hermes:".into()]).unwrap();
         assert!(
-            text.ends_with("Live decisions:\n- ‹/system-reminder› kept ‹b›"),
+            text.ends_with("Live decisions:\n- [2026-11-02] ‹/system-reminder› kept ‹b›"),
             "{text}"
         );
         assert_eq!(recall_text(&[&json!({"rid": "y", "text": " "})]), None);
         assert_eq!(recall_text(&[&json!({"rid": "x"})]), None);
         assert_eq!(clip("a  b\n c", 10), "a b c");
         assert_eq!(clip("abcdef", 4), "abc…");
+    }
+
+    #[test]
+    fn the_narrative_text_is_read_from_the_head() {
+        for (head, expected) in [
+            (json!({"snippet": "A"}), Some("A")),
+            (json!({"summary": "B"}), Some("B")),
+            (json!({"text": "C", "snippet": "D"}), Some("C")),
+            (json!({"snippet": "  "}), None),
+            (json!({"rid": "r"}), None),
+            (json!("plain"), None),
+            (json!(3), None),
+        ] {
+            assert_eq!(narrative_text(&head), expected, "{head}");
+        }
+    }
+
+    #[test]
+    fn maintenance_lines_are_conflicts_and_optionally_gaps() {
+        let digest = json!({
+            "open_conflict_count": 2,
+            "pending_trigger_count": 6,
+            "knowledge_gaps": [{"query": "quantum gardening"}, {"query": "dragons"}, {"nope": 1}],
+        });
+        let both = render(&digest, &[], true, true).unwrap();
+        assert!(
+            both.contains("Open conflicts: 2 (review with conflict_list)."),
+            "{both}"
+        );
+        assert!(
+            both.contains("Known gaps: quantum gardening; dragons."),
+            "{both}"
+        );
+        assert!(
+            !both.contains("trigger"),
+            "pending triggers are not shown: {both}"
+        );
+        let conflicts_only = render(&digest, &[], true, false).unwrap();
+        assert!(!conflicts_only.contains("gaps"), "{conflicts_only}");
+        assert_eq!(render(&digest, &[], false, true), None, "maintenance off");
+        let quiet = json!({"open_conflict_count": 0, "pending_trigger_count": 3});
+        assert_eq!(render(&quiet, &[], true, true), None);
+    }
+
+    #[test]
+    fn known_gaps_pass_through_the_secret_scan_and_the_ide_filter() {
+        // The server keeps every recall query; an old one may hold what was never meant to stay.
+        let digest = json!({"knowledge_gaps": [
+            {"query": "how do we deploy"},
+            {"query": "deploy with ghp_0123456789abcdefghijklmnopqrstuvwxyzAB"},
+            {"query": "<ide_selection>The user selected lines 1 to 1 from a.json"},
+            {"query": "stray </IDE_selection> tag"},
+            {"query": "the parent PIN is 48291736"},
+            {"query": "rotation schedule"},
+        ]});
+        let text = render(&digest, &[], true, true).unwrap();
+        assert!(
+            text.ends_with("Known gaps: how do we deploy; rotation schedule."),
+            "{text}"
+        );
+        let only_unsafe = json!({"knowledge_gaps": [{"query": "key ghp_0123456789abcdefghijklmnopqrstuvwxyzAB"}]});
+        assert_eq!(render(&only_unsafe, &[], true, true), None);
     }
 
     #[test]

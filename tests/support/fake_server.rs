@@ -57,6 +57,12 @@ impl Step {
     pub fn delete(path: &str) -> Self {
         Self::new("DELETE", path)
     }
+    /// The answer to the duplicate check a single `remember` makes before it writes.
+    pub fn no_duplicate() -> Self {
+        Self::post("/v1/recall")
+            .body(|b| b["top_k"] == 1 && b["skip_reinforce"] == true)
+            .json(serde_json::json!({"results": []}))
+    }
     pub fn status(mut self, s: u16) -> Self {
         self.status = s;
         self
@@ -129,6 +135,8 @@ impl Recorded {
 struct State {
     steps: VecDeque<Step>,
     log: Vec<Recorded>,
+    /// Answer each request with the first step for its method and path, whatever the order.
+    unordered: bool,
 }
 
 /// Handle to a running fake server. It lives on its own thread and runtime, so tests
@@ -141,9 +149,19 @@ pub struct FakeServer {
 
 impl FakeServer {
     pub fn start(steps: Vec<Step>) -> Self {
+        Self::start_with(steps, false)
+    }
+
+    /// For clients that send several requests at once: steps match by method and path.
+    pub fn start_unordered(steps: Vec<Step>) -> Self {
+        Self::start_with(steps, true)
+    }
+
+    fn start_with(steps: Vec<Step>, unordered: bool) -> Self {
         let state = Arc::new(Mutex::new(State {
             steps: steps.into(),
             log: Vec::new(),
+            unordered,
         }));
         let (tx, rx) = std::sync::mpsc::channel();
         let st = state.clone();
@@ -223,7 +241,18 @@ async fn serve(mut sock: TcpStream, state: Arc<Mutex<State>>) {
         let Some((method, path, headers, body)) = read_request(&mut sock).await else {
             return;
         };
-        let step = state.lock().unwrap().steps.pop_front();
+        let step = {
+            let mut st = state.lock().unwrap();
+            if st.unordered {
+                let at = st
+                    .steps
+                    .iter()
+                    .position(|s| s.method == method && s.path == path);
+                at.and_then(|i| st.steps.remove(i))
+            } else {
+                st.steps.pop_front()
+            }
+        };
         let mut rec = Recorded {
             method: method.clone(),
             path: path.clone(),

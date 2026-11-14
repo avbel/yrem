@@ -4,15 +4,23 @@
 //! the briefing, the relevance gate, per-session dedup and capture. A hook never fails the
 //! session: errors go to stderr and the exit code is always 0.
 
+mod briefing;
+pub mod decisions;
 pub mod gate;
+pub mod lineage;
+pub mod project;
+pub mod query;
 pub mod render;
+pub mod settings;
 pub mod state;
 pub mod transcript;
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use tokio::time::Instant as TokioInstant;
 
 use clap::ValueEnum;
 use serde::Deserialize;
@@ -21,16 +29,21 @@ use serde_json::Value;
 use crate::client::Client;
 use crate::config::{Config, Overrides};
 use crate::error::Error;
-use crate::ops::{App, RecallArgs, SessionCaptureArgs, SessionDigestArgs, SessionEndArgs};
+use crate::ops::{App, RecallArgs, SessionCaptureArgs, SessionEndArgs};
 use crate::ops::{SessionStartArgs, ThinkArgs};
 use crate::output;
 use crate::secrets;
 use gate::Gate;
+use lineage::Vetter;
+pub use settings::{Maintenance, Settings};
 use state::{Kind, Store};
 
-const MIN_PROMPT_CHARS: usize = 24;
-const QUERY_CHARS: usize = 400;
 const CANDIDATES: u32 = 10;
+/// What reading the sources of merged candidates may take; a prompt must not wait on it.
+const LINEAGE_BUDGET: Duration = Duration::from_secs(3);
+/// A memory injected in this project within the last day comes back only when it matches
+/// at least this well.
+const COOLDOWN_BYPASS_SIMILARITY: f64 = 0.65;
 const CAPTURE_LINES: usize = 40;
 const CAPTURE_CHARS: usize = 6000;
 /// Per-request timeout for capture and session end; the whole capture is bounded below.
@@ -90,6 +103,8 @@ pub struct Input {
     /// `startup`, `resume`, `clear` or `compact`.
     pub source: Option<String>,
     pub transcript_path: Option<String>,
+    /// Working directory of the session; the project comes from it.
+    pub cwd: Option<String>,
     /// User turns, for harnesses without a transcript file.
     pub turns: Vec<Turn>,
 }
@@ -114,69 +129,6 @@ impl Input {
     }
 }
 
-/// `YREM_HOOK_*` settings.
-#[derive(Debug, Clone)]
-#[allow(clippy::struct_excessive_bools, reason = "independent on/off switches")]
-pub struct Settings {
-    pub namespace: Option<String>,
-    pub digest: bool,
-    pub decisions: usize,
-    pub maintenance: bool,
-    pub recall: bool,
-    pub top_k: usize,
-    pub gate: Gate,
-    pub capture: bool,
-    pub think: bool,
-    pub track_session: bool,
-}
-
-impl Settings {
-    #[must_use]
-    pub fn from_env(env: &impl Fn(&str) -> Option<String>) -> Self {
-        let get = |k: &str| {
-            env(&format!("YREM_HOOK_{k}"))
-                .map(|v| v.trim().to_owned())
-                .filter(|v| !v.is_empty())
-        };
-        let flag = |k: &str, default: bool| {
-            get(k).map_or(default, |v| {
-                !matches!(
-                    v.to_ascii_lowercase().as_str(),
-                    "0" | "false" | "no" | "off"
-                )
-            })
-        };
-        let num = |k: &str, default: usize| get(k).and_then(|v| v.parse().ok()).unwrap_or(default);
-        let capture = flag("CAPTURE", false);
-        Self {
-            namespace: get("NAMESPACE"),
-            digest: flag("DIGEST", true),
-            decisions: num("DECISIONS", 5),
-            maintenance: flag("MAINTENANCE", false),
-            recall: flag("RECALL", true),
-            top_k: num("TOP_K", 3),
-            gate: Gate {
-                min_similarity: get("MIN_SIMILARITY")
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(0.50),
-                include_captured: capture,
-                excluded_namespaces: get("EXCLUDE_NAMESPACES")
-                    .map(|v| {
-                        v.split(',')
-                            .map(str::trim)
-                            .filter(|s| !s.is_empty())
-                            .map(str::to_owned)
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-            },
-            capture,
-            think: flag("THINK", true),
-            track_session: flag("TRACK_SESSION", true),
-        }
-    }
-}
-
 /// Runs one hook. Never fails: diagnostics go to stderr.
 pub async fn run(overrides: &Overrides, event: Event, harness: Harness, detach: bool) {
     let (input, raw) = Input::from_stdin();
@@ -192,12 +144,21 @@ pub async fn run(overrides: &Overrides, event: Event, harness: Harness, detach: 
         return;
     };
     let settings = Settings::from_env(&env);
+    let project = settings.namespace.clone().or_else(|| {
+        let cwd = input.cwd.as_deref().filter(|c| !c.trim().is_empty())?;
+        project::resolve(Path::new(cwd), &settings.aliases)
+    });
+    let headless = is_headless(&env, &input);
+    let gate = settings.gate.clone().with_project(project.clone());
     let hook = Hook {
         overrides,
         harness,
         settings,
         store,
         input,
+        project,
+        gate,
+        headless,
     };
     match hook.handle(event).await {
         Ok(Some(text)) => output::print_raw(&hook.format(event, &text)),
@@ -217,6 +178,22 @@ struct Hook<'a> {
     settings: Settings,
     store: Store,
     input: Input,
+    /// The explicit namespace, else the project of `cwd`. Capture, the tracked session and
+    /// the briefing go to it; recall is only filtered by an explicit namespace.
+    project: Option<String>,
+    gate: Gate,
+    /// Machine-driven session: no briefing, no recall.
+    headless: bool,
+}
+
+/// SDK-driven Claude Code runs, `codex exec` and Codex subagents write their own prompts.
+fn is_headless(env: &impl Fn(&str) -> Option<String>, input: &Input) -> bool {
+    env("CLAUDE_CODE_ENTRYPOINT").is_some_and(|e| e.starts_with("sdk"))
+        || input
+            .transcript_path
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .is_some_and(|p| transcript::is_headless_session(Path::new(p)))
 }
 
 impl Hook<'_> {
@@ -265,43 +242,12 @@ impl Hook<'_> {
         self.store.sweep();
         let app = self.app(Duration::from_secs(8))?;
         let track = async {
-            if self.settings.track_session {
+            if self.settings.track_session && !self.headless {
                 self.track(&app).await;
             }
         };
         let (text, ()) = tokio::join!(self.briefing(&app), track);
         text
-    }
-
-    async fn briefing(&self, app: &App) -> anyhow::Result<Option<String>> {
-        let s = &self.settings;
-        if !s.digest
-            || !self
-                .store
-                .claim_digest(self.session(), self.input.source.as_deref())
-        {
-            return Ok(None);
-        }
-        let args = SessionDigestArgs {
-            namespace: s.namespace.clone(),
-            include_gaps: s.maintenance,
-        };
-        let digest = match app.session_digest(args).await {
-            Ok(d) => d,
-            Err(e) => {
-                self.store.release_digest(self.session());
-                return Err(e.into());
-            }
-        };
-        let excluded = &s.gate.excluded_namespaces;
-        let text = render::digest_text(&digest, s.decisions, s.maintenance, excluded);
-        for d in render::live_decisions(&digest, s.decisions, excluded) {
-            if let Some(rid) = d.get("rid").and_then(Value::as_str) {
-                let _ = self.store.claim(self.session(), Kind::Seen, rid);
-            }
-        }
-        self.store.finish_digest(self.session());
-        Ok(text)
     }
 
     /// Opens a tracked server session, keyed by the harness session so each owns its slot.
@@ -314,7 +260,7 @@ impl Hook<'_> {
         // high-entropy secret detector.
         let start = |client_id: String| {
             app.session_start(SessionStartArgs {
-                namespace: self.settings.namespace.clone(),
+                namespace: self.project.clone(),
                 client_id: Some(client_id),
                 force: true,
             })
@@ -340,41 +286,70 @@ impl Hook<'_> {
 
     async fn prompt(&self) -> anyhow::Result<Option<String>> {
         let s = &self.settings;
-        let prompt = self.input.prompt.as_deref().unwrap_or_default().trim();
-        if !s.recall || prompt.chars().count() < MIN_PROMPT_CHARS || prompt.starts_with('/') {
+        if !s.recall || self.headless {
             return Ok(None);
         }
+        let Some(query) = query::build(self.input.prompt.as_deref().unwrap_or_default()) else {
+            return Ok(None);
+        };
         let app = self.app(Duration::from_secs(5))?;
         let resp = app
             .recall(RecallArgs {
-                query: render::clip(prompt, QUERY_CHARS),
+                query,
                 top_k: Some(CANDIDATES),
                 namespace: s.namespace.clone(),
+                // The gate rejects most candidates; they should not be strengthened for it.
+                skip_reinforce: true,
                 ..RecallArgs::default()
             })
             .await?;
-        // Claiming each rid makes concurrent prompt hooks split the hits instead of
-        // injecting the same one twice.
-        let hits: Vec<&Value> = resp
+        let mut candidates: Vec<&Value> = resp
             .get("results")
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .filter(|h| s.gate.reject(h).is_none())
-            .filter(|h| {
-                let rid = h.get("rid").and_then(Value::as_str).unwrap_or_default();
-                !self.store.has(self.session(), Kind::Seen, rid)
-            })
-            .take(s.top_k)
-            .filter(|h| {
-                let rid = h.get("rid").and_then(Value::as_str).unwrap_or_default();
-                self.store.claim(self.session(), Kind::Seen, rid)
-            })
+            .filter(|h| self.gate.reject(h).is_none())
             .collect();
+        self.gate.prioritize(&mut candidates);
+        let mut vetter = Vetter::new(app.client.clone(), TokioInstant::now() + LINEAGE_BUDGET);
+        let mut hits: Vec<&Value> = Vec::new();
+        for h in candidates {
+            if hits.len() == s.top_k {
+                break;
+            }
+            if self.store.has(self.session(), Kind::Seen, rid(h)) || self.cooling(h) {
+                continue;
+            }
+            if !vetter.clean(&lineage::sources_of(h)).await {
+                continue;
+            }
+            // Claiming each rid makes concurrent prompt hooks split the hits instead of
+            // injecting the same one twice.
+            if self.store.claim(self.session(), Kind::Seen, rid(h)) {
+                hits.push(h);
+            }
+        }
+        if let Some(project) = &self.project {
+            for h in &hits {
+                self.store.mark_injected(project, rid(h));
+            }
+        }
         Ok(render::recall_text(&hits))
     }
 
+    /// Whether `hit` was injected in this project within a day and does not match well
+    /// enough to be shown again.
+    fn cooling(&self, hit: &Value) -> bool {
+        self.project
+            .as_deref()
+            .is_some_and(|p| self.store.cooling(p, rid(hit)))
+            && gate::similarity(hit).is_none_or(|s| s < COOLDOWN_BYPASS_SIMILARITY)
+    }
+
     async fn session_end(&self) -> anyhow::Result<()> {
+        if self.headless {
+            return Ok(());
+        }
         let app = self.app(CAPTURE_REQUEST)?;
         if let Err(e) = self.capture(&app).await {
             eprintln!("yrem hook: capture: {e:#}");
@@ -403,7 +378,7 @@ impl Hook<'_> {
     /// sent (oversized, looks like a secret). Lines left out by the size cap or the deadline
     /// stay unclaimed for the next run.
     async fn capture(&self, app: &App) -> anyhow::Result<()> {
-        if !self.settings.capture {
+        if !self.settings.capture || self.headless {
             return Ok(());
         }
         let sid = self.session();
@@ -446,7 +421,7 @@ impl Hook<'_> {
         let sent = app
             .session_capture(SessionCaptureArgs {
                 summary,
-                namespace: self.settings.namespace.clone(),
+                namespace: self.project.clone(),
                 ..SessionCaptureArgs::default()
             })
             .await;
@@ -476,9 +451,10 @@ impl Hook<'_> {
     async fn already_stored(&self, app: &App, line: &str) -> crate::Result<bool> {
         let resp = app
             .recall(RecallArgs {
-                query: render::clip(line, QUERY_CHARS),
+                query: render::clip(line, query::QUERY_CHARS),
                 top_k: Some(1),
-                namespace: self.settings.namespace.clone(),
+                namespace: self.project.clone(),
+                skip_reinforce: true,
                 ..RecallArgs::default()
             })
             .await;
@@ -493,6 +469,16 @@ impl Hook<'_> {
             Err(_) => Ok(false),
         }
     }
+}
+
+fn rid(hit: &Value) -> &str {
+    hit.get("rid").and_then(Value::as_str).unwrap_or_default()
+}
+
+fn now_secs() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64())
 }
 
 /// Stable across builds, unlike `DefaultHasher`, so watermarks survive an upgrade.

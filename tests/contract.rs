@@ -169,6 +169,7 @@ async fn lifecycle() {
         force: false,
         rid,
         reason: Some("contract cleanup".into()),
+        ..ForgetArgs::default()
     })
     .await
     .unwrap();

@@ -48,14 +48,14 @@ pub enum Strategy {
 }
 
 impl Strategy {
+    /// The name the server accepts. It has no `dismiss`: that is `keep_both` with a note.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::KeepA => "keep_a",
             Self::KeepB => "keep_b",
-            Self::KeepBoth => "keep_both",
+            Self::KeepBoth | Self::Dismiss => "keep_both",
             Self::Merge => "merge",
-            Self::Dismiss => "dismiss",
         }
     }
 }
@@ -74,6 +74,7 @@ pub struct MemoryInput {
     pub namespace: Option<String>,
     pub metadata: Option<Map<String, Value>>,
     pub created_at: Option<String>,
+    pub sensitive: Option<bool>,
 }
 
 impl MemoryInput {
@@ -91,6 +92,7 @@ impl MemoryInput {
             namespace: self.namespace.or_else(|| defaults.namespace.clone()),
             metadata: self.metadata.or_else(|| defaults.metadata.clone()),
             created_at: self.created_at.or_else(|| defaults.created_at.clone()),
+            sensitive: self.sensitive.or(defaults.sensitive),
         }
     }
 }
@@ -164,6 +166,13 @@ pub struct RememberArgs {
     /// Batch, instead of text; other fields are per-item defaults.
     #[arg(skip)]
     pub memories: Option<Vec<MemoryInput>>,
+    /// Hooks never inject it.
+    #[arg(
+        long_help = "Store with metadata.sensitive=true: the agent hooks never inject it into a session. recall and memory get still return it.",
+        long
+    )]
+    #[serde(default)]
+    pub sensitive: bool,
     /// Read the text from stdin.
     #[arg(
         long_help = "Read the text from stdin instead of the TEXT argument.",
@@ -230,6 +239,17 @@ pub struct RecallArgs {
     /// Rids to drop from results.
     #[arg(long_help = "Rids to leave out, e.g. hits you already saw in a previous recall.", long, num_args = 1..)]
     pub refine_exclude: Option<Vec<String>>,
+    /// Do not strengthen the hits.
+    #[arg(
+        long_help = "Ask the server not to reinforce the returned memories. By default every recall raises their access count and half-life.",
+        long
+    )]
+    #[serde(default)]
+    pub skip_reinforce: bool,
+    /// Full text and metadata, not snippets.
+    #[arg(skip)]
+    #[serde(default)]
+    pub full: bool,
     /// Read the query from stdin.
     #[arg(
         long_help = "Read the query from stdin instead of the QUERY argument.",
@@ -249,6 +269,13 @@ pub struct ForgetArgs {
     pub rid: String,
     #[arg(long_help = "Why it is forgotten; stored on the tombstone.", long)]
     pub reason: Option<String>,
+    /// Also forget merge sources.
+    #[arg(
+        long_help = "When the memory is a server merge (metadata.consolidated_from), also forget the memories it was merged from, however deep. Without it the hidden sources keep their text.",
+        long
+    )]
+    #[serde(default)]
+    pub cascade: bool,
     /// Store despite a secret-like match.
     #[arg(
         long_help = "Waive the secret-like data check (exit 7) and send the data as given. Use only when it is not a secret.",
@@ -286,6 +313,20 @@ pub struct CorrectArgs {
     pub new_valence: Option<f64>,
     #[arg(skip)]
     pub metadata_merge: Option<Map<String, Value>>,
+    /// Hooks never inject it.
+    #[arg(
+        long_help = "Set metadata.sensitive=true on the corrected memory: the agent hooks never inject it into a session.",
+        long
+    )]
+    #[serde(default)]
+    pub sensitive: bool,
+    /// Also forget merge sources.
+    #[arg(
+        long_help = "When the old memory is a server merge (metadata.consolidated_from), also forget the memories it was merged from, however deep, once the correction is written.",
+        long
+    )]
+    #[serde(default)]
+    pub cascade: bool,
     /// Store despite a secret-like match.
     #[arg(
         long_help = "Waive the secret-like data check (exit 7) and send the data as given. Use only when it is not a secret.",
@@ -339,8 +380,11 @@ pub struct GraphEdgesArgs {
 #[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ConflictListArgs {
-    /// open, resolved or dismissed.
-    #[arg(long_help = "Filter by status: open, resolved or dismissed.", long)]
+    /// open or resolved.
+    #[arg(
+        long_help = "Filter by status: open or resolved. A dismissed conflict is a resolved one.",
+        long
+    )]
     pub status: Option<String>,
     #[arg(long_help = "Only conflicts involving this entity.", long)]
     pub entity: Option<String>,
@@ -359,7 +403,7 @@ pub struct ConflictResolveArgs {
     #[arg(long_help = "Conflict id from conflict list.")]
     pub id: String,
     #[arg(
-        long_help = "How to resolve; keep_a/keep_b tombstone the loser, merge needs --new-text, dismiss closes it unchanged.",
+        long_help = "How to resolve; keep_a/keep_b tombstone the loser, merge needs --new-text. dismiss closes it unchanged: the server has no dismiss, so it is sent as keep_both with the note prefixed \"dismissed: \".",
         long,
         value_enum
     )]

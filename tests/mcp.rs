@@ -112,10 +112,12 @@ async fn every_tool_success_and_error() {
         (
             "remember",
             json!({"text": "Payments uses PostgreSQL", "importance": 2.0}),
-            vec![Step::post("/v1/remember")
+            vec![Step::no_duplicate(),
+                 Step::post("/v1/remember")
                 .body(|b| b["importance"] == 1.0)
                 .json(json!({"rid": "r1", "log_index": 3}))],
-            vec![Step::post("/v1/remember").status(429).json(json!({"error": "quota"}))],
+            vec![Step::no_duplicate(),
+                 Step::post("/v1/remember").status(429).json(json!({"error": "quota"}))],
         ),
         (
             "recall",
@@ -268,6 +270,56 @@ async fn emulated_correct_partial_mentions_both_rids() {
         "{t}"
     );
     srv.assert_done();
+    c.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn recall_returns_snippets_unless_full() {
+    let long = "word ".repeat(200);
+    let answer = json!({"results": [{"rid": "r1", "text": long, "score": 0.5, "created_at": 1_793_392_814.0,
+        "namespace": "payments", "metadata": {"k": 1}, "why_retrieved": ["recent"]}]});
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall").json(answer.clone()),
+        Step::post("/v1/recall").json(answer),
+    ]);
+    let c = client(&srv.url).await;
+    let slim: Value = serde_json::from_str(&text(
+        &c.call_tool(params("recall", json!({"query": "x"})))
+            .await
+            .unwrap(),
+    ))
+    .unwrap();
+    let hit = &slim["results"][0];
+    assert_eq!(hit["truncated"], true);
+    assert_eq!(hit["text"].as_str().unwrap().chars().count(), 300);
+    assert_eq!(hit["rid"], "r1");
+    assert!(hit.get("metadata").is_none());
+    let full: Value = serde_json::from_str(&text(
+        &c.call_tool(params("recall", json!({"query": "x", "full": true})))
+            .await
+            .unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(full["results"][0]["metadata"], json!({"k": 1}));
+    assert_eq!(full["results"][0]["text"].as_str().unwrap().len(), 1000);
+    c.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn recall_description_points_at_memory_get() {
+    let srv = FakeServer::start(vec![]);
+    let c = client(&srv.url).await;
+    let tools = c.list_all_tools().await.unwrap();
+    let desc = |name: &str| {
+        tools
+            .iter()
+            .find(|t| t.name == name)
+            .and_then(|t| t.description.as_deref())
+            .unwrap()
+            .to_owned()
+    };
+    assert!(desc("recall").contains("memory_get"));
+    assert!(desc("correct").contains("keeps created_at"));
     c.cancel().await.unwrap();
 }
 

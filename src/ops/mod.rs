@@ -1,6 +1,8 @@
 //! Operations. MCP and CLI both call these; neither contains logic of its own.
 
 mod args;
+mod cascade;
+mod view;
 
 use std::collections::HashSet;
 use std::io::Read;
@@ -39,6 +41,18 @@ pub const TOOLS: [&str; 12] = [
     "memory_get",
     "memory_current",
 ];
+
+/// Results the server returns when `top_k` is omitted.
+const SERVER_TOP_K: u32 = 10;
+/// Over-fetch factor and cap for recalls whose time window is filtered client-side.
+const OVERFETCH: u32 = 3;
+const MAX_OVERFETCH: u32 = 100;
+
+/// The server has no `dismiss` strategy (it answers 500), so a dismissal is a `keep_both`
+/// whose note says so.
+fn dismissed_note(note: Option<String>) -> String {
+    note.map_or_else(|| "dismissed".to_owned(), |n| format!("dismissed: {n}"))
+}
 
 /// Drops the offending value from a serde error, which may be a secret the caller pasted.
 ///
@@ -138,6 +152,7 @@ impl App {
             namespace: args.namespace,
             metadata: args.metadata,
             created_at: args.created_at,
+            sensitive: args.sensitive.then_some(true),
         };
         match (args.text.take(), args.memories.take()) {
             (Some(_), Some(_)) => Err(Error::Invalid("give `text` or `memories`, not both".into())),
@@ -147,7 +162,12 @@ impl App {
                 let mut req = remember_request(input, now)?;
                 req.idempotency_key = args.idempotency_key;
                 guard("remember", args.force, &req)?;
-                Ok(shape(self.client.remember(&req).await?))
+                let mut warnings = view::length_warnings(&[&req.text], false);
+                if !args.force && req.idempotency_key.is_none() && !view::is_sensitive(&req) {
+                    warnings.extend(self.duplicate_warning(&req).await);
+                }
+                let written = shape(self.client.remember(&req).await?);
+                Ok(view::with_warnings(written, &warnings))
             }
             (None, Some(memories)) => {
                 if args.idempotency_key.is_some() {
@@ -163,9 +183,28 @@ impl App {
                     .map(|m| remember_request(m.or(&defaults), now))
                     .collect::<Result<Vec<_>>>()?;
                 guard("remember", args.force, &json!({ "memories": &reqs }))?;
-                Ok(shape(self.client.remember_batch(&reqs).await?))
+                let texts: Vec<&str> = reqs.iter().map(|r| r.text.as_str()).collect();
+                let warnings = view::length_warnings(&texts, true);
+                let written = shape(self.client.remember_batch(&reqs).await?);
+                Ok(view::with_warnings(written, &warnings))
             }
         }
+    }
+
+    /// The nearest stored memory when it is almost the same text. Never fails the write: a
+    /// recall that errors just means no warning.
+    async fn duplicate_warning(&self, req: &RememberRequest) -> Option<String> {
+        let found = self
+            .recall(RecallArgs {
+                query: req.text.chars().take(view::DUPLICATE_QUERY_CHARS).collect(),
+                top_k: Some(1),
+                namespace: Some(req.namespace.clone().unwrap_or_else(|| "default".into())),
+                skip_reinforce: true,
+                ..RecallArgs::default()
+            })
+            .await
+            .ok()?;
+        view::duplicate_warning(found.get("results")?.as_array()?.first()?)
     }
 
     pub async fn recall(&self, mut args: RecallArgs) -> Result<Value> {
@@ -183,14 +222,28 @@ impl App {
         }
         let window =
             TimeWindow::from_args(args.since.as_deref(), args.until.as_deref(), Utc::now())?;
+        let wanted = args.top_k.unwrap_or(SERVER_TOP_K);
+        // The server ignores the time window, so the filter below runs on whatever came back:
+        // ask for more, then cut to what was asked.
+        let top_k = if window.is_some() {
+            Some(
+                wanted
+                    .saturating_mul(OVERFETCH)
+                    .min(MAX_OVERFETCH)
+                    .max(wanted),
+            )
+        } else {
+            args.top_k
+        };
         let req = RecallRequest {
             query,
-            top_k: args.top_k,
+            top_k,
             memory_type: args.memory_type.map(|t| t.as_str().to_owned()),
             namespace: args.namespace,
             domain: args.domain,
             source: None,
             include_superseded: None,
+            skip_reinforce: args.skip_reinforce.then_some(true),
             time_window: window.map(|w| w.as_unix()),
         };
         let mut resp = self.client.recall(&req).await?;
@@ -225,6 +278,9 @@ impl App {
                     .count(),
             );
         }
+        if window.is_some() {
+            hits.truncate(usize::try_from(wanted).unwrap_or(usize::MAX));
+        }
         let key = |v: Option<f64>| v.unwrap_or(f64::NEG_INFINITY);
         match args.order {
             None | Some(Order::Relevance) => {}
@@ -245,6 +301,13 @@ impl App {
         Ok(shape(out))
     }
 
+    /// `recall` as the MCP tool answers it: 300-character snippets unless `full`.
+    pub async fn recall_tool(&self, args: RecallArgs) -> Result<Value> {
+        let full = args.full;
+        let out = self.recall(args).await?;
+        Ok(if full { out } else { view::snippets(out) })
+    }
+
     pub async fn forget(&self, args: ForgetArgs) -> Result<Value> {
         let req = ForgetRequest {
             rid: non_empty("rid", args.rid)?,
@@ -252,6 +315,9 @@ impl App {
             reason: args.reason,
         };
         guard("forget", args.force, &req)?;
+        if args.cascade {
+            return self.forget_cascade(req).await;
+        }
         Ok(shape(self.client.forget(&req).await?))
     }
 
@@ -276,29 +342,40 @@ impl App {
                 .new_valence
                 .map(|v| clamp("new_valence", v, -1.0, 1.0))
                 .transpose()?,
-            metadata_merge: args.metadata_merge,
+            metadata_merge: view::flag_sensitive(
+                args.metadata_merge,
+                args.sensitive.then_some(true),
+            ),
         };
         guard("correct", args.force, &req)?;
-        match self.client.correct(&req).await {
+        let sources = if args.cascade {
+            self.merge_sources(&rid).await?
+        } else {
+            Vec::new()
+        };
+        let mut out = match self.client.correct(&req).await {
             Ok(v) => {
                 let mut v = shape(v);
                 if let Value::Object(o) = &mut v {
                     o.insert("emulated".into(), false.into());
                 }
-                Ok(v)
+                v
             }
-            Err(Error::Unsupported { .. }) => self.correct_emulated(req).await,
-            Err(e) => Err(e),
+            Err(Error::Unsupported { .. }) => self.correct_emulated(req).await?,
+            Err(e) => return Err(e),
+        };
+        if args.cascade {
+            self.forget_sources(&sources, Some(reason)).await?;
+            if let Value::Object(o) = &mut out {
+                o.insert("cascaded".into(), json!(sources));
+            }
         }
+        Ok(out)
     }
 
     async fn correct_emulated(&self, req: CorrectRequest) -> Result<Value> {
         let old = self.client.memory_get(&req.rid).await?;
-        let mut metadata = match old.metadata {
-            Value::Object(m) => m,
-            Value::String(s) => serde_json::from_str(&s).unwrap_or_default(),
-            _ => Map::new(),
-        };
+        let mut metadata = view::without_consolidation(view::metadata_object(old.metadata));
         metadata.extend(req.metadata_merge.unwrap_or_default());
         metadata.insert("corrects".into(), req.rid.clone().into());
         metadata.insert("correct_reason".into(), req.reason.into());
@@ -319,7 +396,7 @@ impl App {
             namespace: old.namespace.filter(|s| !s.is_empty()),
             emotional_state: old.emotional_state,
             metadata: Some(metadata),
-            created_at: None,
+            created_at: old.created_at,
             idempotency_key: None,
         };
         let written = self.client.remember(&new).await?;
@@ -384,11 +461,16 @@ impl App {
         {
             return Err(Error::Invalid("strategy `merge` needs `new_text`".into()));
         }
+        let note = if args.strategy == Strategy::Dismiss {
+            Some(dismissed_note(args.note))
+        } else {
+            args.note
+        };
         let req = ResolveRequest {
             strategy: args.strategy.as_str().to_owned(),
             winner_rid: None,
             new_text: args.new_text,
-            resolution_note: args.note,
+            resolution_note: note,
         };
         guard("conflict_resolve", args.force, &req)?;
         Ok(shape(self.client.resolve_conflict(&id, &req).await?))
@@ -661,7 +743,7 @@ fn remember_request(m: MemoryInput, now: chrono::DateTime<Utc>) -> Result<Rememb
         source: m.source,
         namespace: m.namespace,
         emotional_state: None,
-        metadata: m.metadata,
+        metadata: view::flag_sensitive(m.metadata, m.sensitive),
         created_at: m
             .created_at
             .map(|t| time::parse(&t, now).map(time::unix_secs))

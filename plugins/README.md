@@ -23,12 +23,28 @@ Settings are `YREM_HOOK_*` environment variables, documented in
 
 ## Things to know
 
+- The project comes from the event's `cwd`: the directory name of the git repository's main
+  worktree, so `fluidd-wt-306` and `.claude/worktrees/agent-*` are `fluidd`. Claude Code and
+  Codex send `cwd` themselves; the OpenCode and pi plugins put it in the JSON they build. The
+  project scopes the briefing (live decisions of the project plus a couple of recent ones),
+  ranks and gates recall (hits of the project pass at a lower bar than the rest) and names the
+  namespace of captured lines and of the tracked session. `YREM_HOOK_NAMESPACE_ALIASES` maps a
+  renamed repository (`bw-lite-desktop=vaultkeeper`); an explicit `YREM_HOOK_NAMESPACE` wins.
 - `yrem` injects the digest once per session even when two hooks fire it (say, the Claude plugin
   plus a hand-written `yrem hook session-start` in `~/.claude/settings.json`), and again only
-  after `compact` or `clear`. Recall never repeats a memory already shown in the session.
+  after `compact` or `clear`. Recall never repeats a memory already shown in the session, nor
+  one shown in the same project within the last 24 hours (unless it matches strongly).
+- Sessions run by a machine (`CLAUDE_CODE_ENTRYPOINT` starting with `sdk`, `codex exec`, Codex
+  subagents) get no briefing, no recall, no tracked session and no `think`. The query sent for
+  a prompt has IDE blocks cut out (a prompt whose IDE block cannot be told from its text sends
+  nothing) and secrets replaced by `<redacted>`; harness text (subagent hand-backs, task
+  notifications) sends none. Memories stored with `--sensitive` are never injected, nor are
+  merges made from them (the hooks read a merge's sources first). The briefing asks the server
+  for the digest and two listings at once and waits 8 seconds at most.
 - Capture (`YREM_HOOK_CAPTURE=1`) sends each user line at most once per session and skips lines
   already in memory (semantic similarity ≥ 0.92), so `PreCompact` and `SessionEnd` never store
-  the same fact twice.
+  the same fact twice. It writes to the project namespace. Turning it on does not make recall
+  inject captured rows; that is `YREM_HOOK_INJECT_CAPTURED`.
 - Do not run these next to the `yantrikdb-*` plugins; every prompt would be recalled twice.
 - The plugins do not bundle the MCP server, so the tools are never registered twice. Add it
   yourself:

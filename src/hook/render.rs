@@ -2,6 +2,9 @@
 
 use serde_json::{Value, json};
 
+use super::decisions::Decision;
+use super::query;
+
 const MARKER: &str = " …[truncated]";
 const SNIPPET_CHARS: usize = 300;
 const MAX_GAPS: usize = 5;
@@ -64,80 +67,61 @@ pub fn snippet(text: &str, max: usize) -> String {
     clip(text, max).replace('<', "‹").replace('>', "›")
 }
 
-/// Live decisions shown by [`digest_text`]: not superseded, not in an excluded namespace.
-#[must_use]
-pub fn live_decisions<'a>(digest: &'a Value, max: usize, excluded: &[String]) -> Vec<&'a Value> {
-    let str_of = |d: &'a Value, k| d.get(k).and_then(Value::as_str);
-    digest
-        .get("top_decisions")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|d| str_of(d, "current_status") != Some("superseded"))
-        .filter(|d| str_of(d, "superseded_by").is_none_or(str::is_empty))
-        .filter(|d| {
-            let ns = str_of(d, "namespace").unwrap_or_default();
-            !excluded.iter().any(|p| ns.starts_with(p.as_str()))
-        })
-        .filter(|d| str_of(d, "snippet").is_some_and(|t| !t.trim().is_empty()))
-        .take(max)
-        .collect()
-}
-
 /// The briefing as plain text, or `None` when there is nothing worth injecting.
+///
+/// The maintenance counts come from the server's digest. The narrative and the decisions are
+/// the caller's picks: only what it vetted is shown (see `decisions`).
 #[must_use]
 pub fn digest_text(
+    narrative: Option<&str>,
     digest: &Value,
-    decisions: usize,
+    decisions: &[Decision],
     maintenance: bool,
-    excluded: &[String],
+    include_gaps: bool,
 ) -> Option<String> {
     let mut lines = Vec::new();
-    if let Some(head) = narrative(digest.get("narrative_head")) {
+    if let Some(head) = narrative {
         lines.push(format!("Where things stood: {}", snippet(head, 600)));
     }
-    let live = live_decisions(digest, decisions, excluded);
-    if !live.is_empty() {
+    if !decisions.is_empty() {
         lines.push("Live decisions:".to_owned());
     }
-    for d in live {
-        let text = d.get("snippet").and_then(Value::as_str).unwrap_or_default();
+    for d in decisions {
         let date = d
-            .get("created_at_iso")
-            .and_then(Value::as_str)
-            .map(|s| format!("[{}] ", s.get(..10).unwrap_or(s)))
+            .date
+            .as_ref()
+            .map(|d| format!("[{d}] "))
             .unwrap_or_default();
-        lines.push(format!("- {date}{}", self::snippet(text, SNIPPET_CHARS)));
+        lines.push(format!("- {date}{}", snippet(&d.text, SNIPPET_CHARS)));
     }
     if maintenance {
-        lines.extend(maintenance_lines(digest));
+        lines.extend(maintenance_lines(digest, include_gaps));
     }
     (!lines.is_empty()).then(|| format!("{DIGEST_HEADER}{}", lines.join("\n")))
 }
 
-fn narrative(head: Option<&Value>) -> Option<&str> {
-    let text = match head? {
-        Value::String(s) => s.as_str(),
-        Value::Object(o) => ["text", "summary", "snippet"]
-            .iter()
-            .find_map(|k| o.get(*k).and_then(Value::as_str))?,
-        _ => return None,
-    };
+/// The text of the digest's narrative head: an object with a `rid`, whose text is not shown
+/// before the caller knows the memory is fit to show.
+#[must_use]
+pub fn narrative_text(head: &Value) -> Option<&str> {
+    let text = ["text", "summary", "snippet"]
+        .iter()
+        .find_map(|k| head.get(*k).and_then(Value::as_str))?;
     (!text.trim().is_empty()).then_some(text)
 }
 
-fn maintenance_lines(digest: &Value) -> Vec<String> {
-    let count = |k: &str| digest.get(k).and_then(Value::as_u64).unwrap_or(0);
+/// Open conflicts, and the recall topics that came back weak when the digest carries them.
+/// Pending triggers are left out: nothing acts on them.
+fn maintenance_lines(digest: &Value, include_gaps: bool) -> Vec<String> {
     let mut lines = Vec::new();
-    let conflicts = count("open_conflict_count");
+    let conflicts = digest
+        .get("open_conflict_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     if conflicts > 0 {
         lines.push(format!(
             "Open conflicts: {conflicts} (review with conflict_list)."
         ));
-    }
-    let triggers = count("pending_trigger_count");
-    if triggers > 0 {
-        lines.push(format!("Pending triggers: {triggers}."));
     }
     let gaps: Vec<&str> = digest
         .get("knowledge_gaps")
@@ -145,9 +129,10 @@ fn maintenance_lines(digest: &Value) -> Vec<String> {
         .into_iter()
         .flatten()
         .filter_map(|g| g.get("query").and_then(Value::as_str))
+        .filter(|q| query::is_safe(q))
         .take(MAX_GAPS)
         .collect();
-    if !gaps.is_empty() {
+    if include_gaps && !gaps.is_empty() {
         lines.push(format!("Known gaps: {}.", snippet(&gaps.join("; "), 600)));
     }
     lines

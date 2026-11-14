@@ -52,6 +52,8 @@ pub struct RecallRequest {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_superseded: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip_reinforce: Option<bool>,
     /// `[since, until]` in unix seconds. Servers may ignore it; yrem also filters locally.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_window: Option<(f64, f64)>,

@@ -69,21 +69,39 @@ fn walk(value: &Value, path: &str, out: &mut Vec<Finding>) {
                 push_hits(key_hits, &child, out);
                 let before = out.len();
                 walk(item, &child, out);
-                if let Value::String(s) = item
-                    && out.len() == before
-                    && detectors::is_credential_name(key)
-                    && detectors::is_credential_value(s)
+                if out.len() == before
+                    && let Some((kind, end)) = field_kind(key, item)
                 {
                     out.push(Finding {
-                        kind: "credential_field",
+                        kind,
                         path: child,
                         start: 0,
-                        end: s.chars().count(),
+                        end,
                     });
                 }
             }
         }
         _ => {}
+    }
+}
+
+/// What a `key: value` pair holds when the key names a credential or a PIN and the value fits:
+/// the finding's kind and the value's length in chars.
+fn field_kind(key: &str, value: &Value) -> Option<(&'static str, usize)> {
+    let pin_number = || value.as_u64().map(|n| n.to_string());
+    match value {
+        Value::String(s)
+            if detectors::is_credential_name(key) && detectors::is_credential_value(s) =>
+        {
+            Some(("credential_field", s.chars().count()))
+        }
+        Value::String(s) if detectors::is_pin_name(key) && detectors::is_pin_value(s) => {
+            Some(("pin_code", s.chars().count()))
+        }
+        Value::Number(_) => pin_number()
+            .filter(|n| detectors::is_pin_name(key) && detectors::is_pin_value(n))
+            .map(|n| ("pin_code", n.len())),
+        _ => None,
     }
 }
 
@@ -120,7 +138,8 @@ pub fn refusal(op: &str, findings: &[Finding]) -> String {
     }
     format!(
         "{op} refused: possible secret(s), nothing stored. {}. Redact them (e.g. \"<redacted>\") \
-         and retry; if this is not secret data, retry with force=true (CLI: --force).",
+         and retry; if this is not secret data, retry with force=true (CLI: --force). Forgetting \
+         does not erase: forgotten text stays on the server.",
         parts.join("; ")
     )
 }

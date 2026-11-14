@@ -154,7 +154,10 @@ fn remember() {
 
 #[test]
 fn remember_stdin() {
-    let srv = FakeServer::start(vec![Step::post("/v1/remember").fixture("remember_minimal")]);
+    let srv = FakeServer::start(vec![
+        Step::no_duplicate(),
+        Step::post("/v1/remember").fixture("remember_minimal"),
+    ]);
     let out = yrem_stdin(
         &srv,
         &["remember", "--stdin"],
@@ -163,7 +166,7 @@ fn remember_stdin() {
     ok(&out);
     srv.assert_done();
     assert_eq!(
-        srv.requests()[0].body["text"],
+        srv.requests()[1].body["text"],
         "multi word\nsecond line é🦀"
     );
 }
@@ -398,8 +401,8 @@ fn conflict_commands() {
             .body(|b| b["strategy"] == "merge" && b["new_text"] == "merged")
             .json(json!({"conflict_id": "c2", "strategy": "merge"})),
         Step::post("/v1/conflicts/c3/resolve")
-            .body(|b| b["strategy"] == "dismiss")
-            .json(json!({"conflict_id": "c3", "strategy": "dismiss"})),
+            .body(|b| b["strategy"] == "keep_both" && b["resolution_note"] == "dismissed")
+            .json(json!({"conflict_id": "c3", "strategy": "keep_both"})),
     ]);
     let v = ok(&yrem(
         &srv,
@@ -431,7 +434,7 @@ fn conflict_commands() {
         ],
     ));
     let v = ok(&yrem(&srv, &["conflict", "dismiss", "c3"]));
-    assert_eq!(v["strategy"], "dismiss");
+    assert_eq!(v["strategy"], "keep_both");
     srv.assert_done();
 }
 
@@ -569,6 +572,7 @@ fn memory_commands() {
 #[test]
 fn call_with_json_argument_and_batch() {
     let srv = FakeServer::start(vec![
+        Step::no_duplicate(),
         Step::post("/v1/remember").fixture("remember"),
         Step::post("/v1/remember/batch").fixture("remember_batch"),
     ]);
@@ -582,8 +586,29 @@ fn call_with_json_argument_and_batch() {
     assert_eq!(v["count"], 4);
     srv.assert_done();
     let reqs = srv.requests();
-    assert_eq!(reqs[0].body["importance"], 1.0);
-    assert_eq!(reqs[1].body["memories"].as_array().unwrap().len(), 2);
+    assert_eq!(reqs[1].body["importance"], 1.0);
+    assert_eq!(reqs[2].body["memories"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn call_recall_prints_what_recall_prints() {
+    let answer = json!({"results": [{"rid": "r1", "text": "t".repeat(500), "score": 0.5,
+                                     "metadata": {"a": 1}}]});
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall").json(answer.clone()),
+        Step::post("/v1/recall").json(answer.clone()),
+        Step::post("/v1/recall").json(answer),
+    ]);
+    let direct = ok(&yrem(&srv, &["recall", "q"]));
+    let via_call = ok(&yrem(&srv, &["call", "recall", r#"{"query":"q"}"#]));
+    assert_eq!(via_call, direct, "only the MCP tool shortens hits");
+    assert_eq!(direct["results"][0]["text"].as_str().unwrap().len(), 500);
+    let full = ok(&yrem(
+        &srv,
+        &["call", "recall", r#"{"query":"q","full":true}"#],
+    ));
+    assert_eq!(full, direct, "`full` is accepted and changes nothing here");
+    srv.assert_done();
 }
 
 #[test]

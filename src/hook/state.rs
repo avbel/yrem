@@ -16,6 +16,14 @@ const ABANDONED: Duration = Duration::from_secs(30);
 /// How long an unreachable server is skipped without a request.
 const DOWN_FOR: Duration = Duration::from_mins(1);
 const KEEP_FOR: Duration = Duration::from_hours(7 * 24);
+/// How long a memory injected in a project is not injected there again, and how often the
+/// maintenance lines appear.
+const DAY: Duration = Duration::from_hours(24);
+
+/// Root-level state. A leading dot keeps these from ever matching a session directory,
+/// whose names `safe_name` limits to letters, digits, `-` and `_`.
+const COOLDOWN_DIR: &str = ".cooldown";
+const MAINTENANCE_FILE: &str = ".maintenance";
 
 const PENDING: &[u8] = b"pending";
 const DONE: &[u8] = b"done";
@@ -182,6 +190,53 @@ impl Store {
         id.filter(|s| !s.trim().is_empty())
     }
 
+    /// True when `rid` was injected in `project` within the last 24 hours.
+    #[must_use]
+    pub fn cooling(&self, project: &str, rid: &str) -> bool {
+        self.cooldown_file(project, rid)
+            .and_then(|p| age(&p))
+            .is_some_and(|a| a < DAY)
+    }
+
+    /// Records that `rid` was injected in `project` now.
+    pub fn mark_injected(&self, project: &str, rid: &str) {
+        if let Some(p) = self.cooldown_file(project, rid)
+            && let Some(dir) = p.parent()
+            && fs::create_dir_all(dir).is_ok()
+        {
+            let _ = File::create(p);
+        }
+    }
+
+    fn cooldown_file(&self, project: &str, rid: &str) -> Option<PathBuf> {
+        Some(
+            self.dir
+                .join(COOLDOWN_DIR)
+                .join(safe_name(project)?)
+                .join(safe_name(rid)?),
+        )
+    }
+
+    /// True when this process should show the maintenance lines: none were shown in the last
+    /// 24 hours by any session. Without usable state, always true.
+    #[must_use]
+    pub fn claim_maintenance(&self) -> bool {
+        if fs::create_dir_all(&self.dir).is_err() {
+            return true;
+        }
+        let path = self.dir.join(MAINTENANCE_FILE);
+        if create_new(&path, b"") {
+            return true;
+        }
+        // Only one concurrent caller can move the old claim away; it alone may re-claim.
+        let stale = path.with_extension(std::process::id().to_string());
+        if age(&path).is_none_or(|a| a < DAY) || fs::rename(&path, &stale).is_err() {
+            return false;
+        }
+        let _ = fs::remove_file(stale);
+        create_new(&path, b"")
+    }
+
     #[must_use]
     pub fn server_down(&self) -> bool {
         age(&self.dir.join("down")).is_some_and(|a| a < DOWN_FOR)
@@ -193,8 +248,9 @@ impl Store {
         }
     }
 
-    /// Deletes sessions untouched for a week.
+    /// Deletes sessions untouched for a week and cooldown marks past their day.
     pub fn sweep(&self) {
+        self.sweep_cooldowns();
         let Ok(entries) = fs::read_dir(&self.dir) else {
             return;
         };
@@ -206,6 +262,24 @@ impl Store {
                 } else {
                     fs::remove_file(&path)
                 };
+            }
+        }
+    }
+}
+
+impl Store {
+    fn sweep_cooldowns(&self) {
+        let Ok(projects) = fs::read_dir(self.dir.join(COOLDOWN_DIR)) else {
+            return;
+        };
+        for project in projects.flatten() {
+            let Ok(marks) = fs::read_dir(project.path()) else {
+                continue;
+            };
+            for mark in marks.flatten() {
+                if age(&mark.path()).is_some_and(|a| a >= DAY) {
+                    let _ = fs::remove_file(mark.path());
+                }
             }
         }
     }

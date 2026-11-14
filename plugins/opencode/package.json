@@ -1,6 +1,6 @@
 {
   "name": "@yrem/opencode",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "yrem memory hooks for OpenCode (V2): every hook calls the yrem CLI, which holds all the logic.",

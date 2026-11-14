@@ -1,9 +1,14 @@
 //! Hand-written secret detectors over the text of one string leaf.
 //!
 //! Offsets are char offsets. Detectors run in the order private key, prefixed token,
-//! URL credentials, credential field, entropy; a token claimed earlier is not reported again.
+//! URL credentials, credential field, PIN code, entropy; a token claimed earlier is not
+//! reported again.
 
 use std::ops::Range;
+
+mod pin;
+
+pub(super) use pin::{is_name as is_pin_name, is_value as is_pin_value};
 
 /// One match inside a string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,6 +93,7 @@ pub(super) fn scan_text(s: &str, skip_entropy: bool) -> Vec<Hit> {
     prefixed_tokens(&toks, &mut hits, &mut claimed);
     url_credentials(&toks, &mut hits, &mut claimed);
     credential_fields(s, &toks, &mut hits, &mut claimed);
+    pin::scan(&toks, &mut hits, &mut claimed);
     if !skip_entropy {
         public_material(&blocks, &toks, &mut claimed);
         high_entropy(&toks, &mut hits, &claimed);
@@ -393,15 +399,19 @@ fn snake_case(name: &str) -> String {
     out
 }
 
-pub(super) fn is_credential_name(name: &str) -> bool {
+fn names_keyword(name: &str, keywords: &[&str]) -> bool {
     let snake = snake_case(name);
-    KEYWORDS.iter().any(|k| {
+    keywords.iter().any(|k| {
         snake.strip_suffix(k).is_some_and(|head| {
             head.chars()
                 .next_back()
                 .is_none_or(|c| !c.is_alphanumeric())
         })
     })
+}
+
+pub(super) fn is_credential_name(name: &str) -> bool {
+    names_keyword(name, KEYWORDS)
 }
 
 fn is_placeholder(v: &str) -> bool {

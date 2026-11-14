@@ -11,7 +11,7 @@
       "displayName": "yrem",
       "source": "./plugins/claude",
       "description": "Session digest, relevance-gated recall per prompt and capture, all delegated to the yrem CLI.",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "license": "MIT",
       "keywords": ["memory", "yrem", "hooks"]
     }

@@ -363,7 +363,8 @@ fn soft_refusal_text() {
         msg,
         "remember refused: possible secret(s), nothing stored. openai_anthropic_key at \
          /text[41..93]. Redact them (e.g. \"<redacted>\") and retry; if this is not secret \
-         data, retry with force=true (CLI: --force)."
+         data, retry with force=true (CLI: --force). Forgetting does not erase: forgotten text \
+         stays on the server."
     );
 }
 
@@ -634,7 +635,16 @@ fn secrets_in_object_keys_are_found_and_never_echoed() {
 #[test]
 fn pathological_input_scans_in_linear_time() {
     let start = std::time::Instant::now();
-    for unit in ["=", "a=", ":", "eyJ."] {
+    for unit in [
+        "=",
+        "a=",
+        ":",
+        "eyJ.",
+        "pin ",
+        "PIN-",
+        "pin 22:15 ",
+        "-pin=",
+    ] {
         let big = unit.repeat(1_000_000 / unit.len());
         let _ = text(&big);
     }
@@ -756,4 +766,336 @@ fn percent_placeholders_need_both_ends() {
     }
     assert_eq!(kinds("password=%Abcdef12").len(), 1);
     assert_eq!(kinds("password=Abcdef12%").len(), 1);
+}
+
+/// The char span of the single `pin_code` finding in `s`, if any.
+fn pin(s: &str) -> Option<(usize, usize)> {
+    let found = text(s);
+    assert!(found.len() <= 1, "{s:?}: {found:?}");
+    found.first().map(|f| {
+        assert_eq!(f.kind, "pin_code", "{s:?}");
+        (f.start, f.end)
+    })
+}
+
+/// The char span of `needle` in `s`.
+fn span(s: &str, needle: &str) -> (usize, usize) {
+    let start = s[..s.find(needle).unwrap()].chars().count();
+    (start, start + needle.chars().count())
+}
+
+#[test]
+fn pin_code_follows_a_keyword_that_reads_as_a_noun() {
+    let s = "PIN as of 2026-10-18 22:15: 48291736";
+    assert_eq!(pin(s), Some(span(s, "48291736")));
+    for (s, digits) in [
+        ("the parent_pin is 482917", "482917"),
+        ("unlock-pin: 4829", "4829"),
+        ("parentPin = 1234567890", "1234567890"),
+        ("pin= 482917", "482917"),
+        ("Pin-Code 482917", "482917"),
+        ("passcode 123456", "123456"),
+        ("Passcodes are 1234 and 5678", "1234"),
+        ("pincode:482917", "482917"),
+        ("**PIN**: 482917", "482917"),
+        ("**PIN: 482917**", "482917"),
+        ("pin\n482917", "482917"),
+        ("PINs (offline unlock, 8 digits): 48291736", "48291736"),
+        ("Пин, pin 482917", "482917"),
+        ("pin: **482917**.", "482917"),
+    ] {
+        assert_eq!(pin(s), Some(span(s, digits)), "{s}");
+    }
+    assert_eq!(pin("pin=482917"), Some((4, 10)));
+}
+
+#[test]
+fn pin_code_noun_evidence_is_one_of_five_signs() {
+    for s in [
+        "pin: 4829",
+        "pin=4829",
+        "PIN 4829",
+        "pincode 4829",
+        "Pin-Code 4829",
+        "pin_code 4829",
+        "passcode 4829",
+        "Passcodes 4829",
+        "пинкод 4829",
+        "пин-код 4829",
+        "ПИН 4829",
+        "the pin 4829",
+        "my pin 4829",
+        "unlock pin 4829",
+        "pin is 4829",
+        "pin was 4829",
+        "pin as 4829",
+        "pin number 4829",
+        "pin code 4829",
+        "pin 482917",
+    ] {
+        assert!(pin(s).is_some(), "{s}");
+    }
+    for s in ["pin 4829", "Pin 4829", "pins 4829", "pin 48291"] {
+        assert!(pin(s).is_none(), "{s}: nothing says noun");
+    }
+}
+
+#[test]
+fn pin_code_reported_forms_are_flagged_whole() {
+    let s = "Parent-control offline unlock PIN as of 2026-10-18 22:15 is now 48291736";
+    assert_eq!(
+        pin(s),
+        Some(span(s, "48291736")),
+        "a date and a time do not use up the window"
+    );
+    for (s, span_text) in [
+        ("PIN-48291736", "48291736"),
+        ("PIN#48291736", "48291736"),
+        ("PIN: 4829-1736", "4829-1736"),
+        ("The PIN is 1234 5678", "1234 5678"),
+        ("The PIN is 1234 5678.", "1234 5678"),
+        ("пин 48291736", "48291736"),
+        ("Pin-Code 4829", "4829"),
+        ("ПИН-код 48291736", "48291736"),
+        ("Пин-код: 4829 1736", "4829 1736"),
+        ("PIN is 12 34 56", "12 34 56"),
+    ] {
+        assert_eq!(pin(s), Some(span(s, span_text)), "{s}");
+    }
+}
+
+#[test]
+fn pin_code_digit_groups_join_up_to_twelve_digits() {
+    let s = "PIN is 1234 5678 9012 3456";
+    assert_eq!(
+        pin(s),
+        Some(span(s, "1234 5678 9012")),
+        "the 13th digit starts no group"
+    );
+    let s = "PIN is 1234 5678. 9012";
+    assert_eq!(
+        pin(s),
+        Some(span(s, "1234 5678")),
+        "a sentence ends the run"
+    );
+    let s = "PIN is 2026 4829";
+    assert_eq!(pin(s), Some(span(s, "2026 4829")));
+    let s = "PIN is 2026 and 4829";
+    assert_eq!(
+        pin(s),
+        Some(span(s, "4829")),
+        "a year alone is not a run, the next number is"
+    );
+}
+
+#[test]
+fn pin_code_digit_count_and_years() {
+    for (digits, flagged) in [
+        ("123", false),
+        ("1234", true),
+        ("123456789012", true),
+        ("1234567890123", false),
+        ("1899", true),
+        ("1900", false),
+        ("1999", false),
+        ("2000", false),
+        ("2099", false),
+        ("2100", true),
+        ("12a456", false),
+        ("1.2345", false),
+        ("2026-10-18", false),
+        ("2026-10", false),
+        ("1234-56", true),
+        ("2026-1234", true),
+    ] {
+        assert_eq!(
+            pin(&format!("PIN {digits}")).is_some(),
+            flagged,
+            "PIN {digits}"
+        );
+    }
+    assert!(
+        pin("pin 20261018").is_some(),
+        "an 8-digit run is never a year"
+    );
+}
+
+#[test]
+fn pin_code_window_and_sentence() {
+    assert!(pin("pin a b c d e 123456").is_some());
+    assert!(pin("pin a b c d e f 123456").is_none());
+    assert!(
+        pin("pin a : : b c d e 123456").is_some(),
+        "bare punctuation is free"
+    );
+    assert!(
+        pin("pin a 2026-10-18 b 22:15 c d e 123456").is_some(),
+        "dates and times are free"
+    );
+    assert!(pin("pin a 22:15:30 b c d e 123456").is_some());
+    assert!(pin("We pin dependencies. Build 4821 passed.").is_none());
+    assert!(pin("pin. 123456").is_none());
+    assert!(
+        pin("Is the pin 123456?").is_some(),
+        "the digits may end the sentence"
+    );
+    assert!(
+        pin("pin v1.5 and then 123456").is_some(),
+        "a dot inside a token is not an end"
+    );
+    assert!(pin("pin a! b 123456").is_none());
+    assert!(pin("what is the pin? 123456").is_none());
+    assert!(pin("pin a b? c 123456").is_none());
+}
+
+#[test]
+fn pin_code_wrappers_and_inline_offsets() {
+    for wrapper in ["*", "_", "|", "~", "**"] {
+        let s = format!("PIN {wrapper}482917{wrapper}");
+        assert_eq!(pin(&s), Some(span(&s, "482917")), "{s}");
+    }
+    let s = "Пин, pin=482917";
+    assert_eq!(pin(s), Some(span(s, "482917")));
+    let s = "Пин: **pin**=482917";
+    assert_eq!(pin(s), Some(span(s, "482917")));
+    let s = "Ж PIN-48291736";
+    assert_eq!(pin(s), Some(span(s, "48291736")));
+}
+
+#[test]
+fn the_verb_is_not_a_pin() {
+    for s in [
+        "pin the timeout to 3000 ms in the retry config",
+        "pins: 1500 rows were moved",
+        "pin issue 4821 to the board",
+        "Pin node to version 1804 for the build",
+        "pin 8080 is the port",
+        "We pin dependencies in 4821 files",
+        "pin the build to 4821 users",
+    ] {
+        assert!(kinds(s).is_empty(), "{s}: {:?}", kinds(s));
+    }
+}
+
+#[test]
+fn pin_code_numbers_that_are_something_else() {
+    for s in [
+        "PIN port 8080",
+        "PIN ports 8080",
+        "PIN version 4821",
+        "PIN v 4821",
+        "PIN issue 4821",
+        "PIN build 4821",
+        "PIN node 4821",
+        "PIN pr 4821",
+        "PIN ticket 4821",
+        "PIN task 4821",
+        "PIN bug 4821",
+        "PIN line 4821",
+        "PIN step 4821",
+        "PIN 4821 ms",
+        "PIN 4821 rows",
+        "PIN 4821 MB",
+        "PIN 4821 s",
+        "PIN 4821 %",
+        "PIN 8080 is the port",
+        "PIN 8080 and the ports",
+        "PIN 8080 a b port",
+    ] {
+        assert!(kinds(s).is_empty(), "{s}: {:?}", kinds(s));
+    }
+    assert!(
+        pin("PIN 8080 a b c port").is_some(),
+        "a port beyond three tokens is not about this number"
+    );
+    assert!(
+        pin("PIN was changed to 482917").is_some(),
+        "`to` does not disqualify a PIN"
+    );
+    assert!(pin("PIN port x 482917").is_some());
+}
+
+#[test]
+fn pin_code_near_misses() {
+    for s in [
+        "SPKI pin 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "SPKI pin 1234567890123456",
+        "the server pins port 7438",
+        "pin Port: 8080",
+        "pin ports 3000",
+        "pin 2026-10-18 22:15",
+        "pin the version in 2026",
+        "pin v1.2.3",
+        "spin 123456",
+        "pinned 123456",
+        "Pinterest 123456",
+        "opinion 123456",
+        "pins and needles",
+        "123456 is the pin",
+        "pin #4821",
+        "PIN 4821.5",
+        "pin-point 4821",
+        "pin-up 4821 and more",
+        "pin#top 4821",
+    ] {
+        assert!(kinds(s).is_empty(), "{s}: {:?}", kinds(s));
+    }
+}
+
+#[test]
+fn pin_code_already_claimed_digits_are_reported_once() {
+    assert_eq!(kinds("pin token: 12345678"), vec!["credential_field"]);
+    assert_eq!(kinds("pin 482917 pin 482917"), vec!["pin_code", "pin_code"]);
+}
+
+#[test]
+fn pin_code_in_metadata_keys() {
+    let found = scan(&json!({"metadata": {"unlock_pin": "482917", "other": "482917"}}));
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        (
+            found[0].kind,
+            found[0].path.as_str(),
+            found[0].start,
+            found[0].end
+        ),
+        ("pin_code", "/metadata/unlock_pin", 0, 6)
+    );
+    let numeric = scan(&json!({"pin": 48_291_736}));
+    assert_eq!(
+        (numeric[0].kind, numeric[0].path.as_str(), numeric[0].end),
+        ("pin_code", "/pin", 8)
+    );
+    let grouped = scan(&json!({"parent_pin": "4829 1736", "passcode": "4829-1736"}));
+    assert_eq!(grouped.len(), 2, "{grouped:?}");
+    assert!(grouped.iter().all(|f| f.kind == "pin_code"));
+    for v in [
+        json!({"pin": "2026"}),
+        json!({"pin": 2026}),
+        json!({"pin": "abc123"}),
+        json!({"pin": 123}),
+        json!({"pin": -48_291_736}),
+        json!({"pin": 4829.5}),
+        json!({"pin": true}),
+        json!({"spin": "482917"}),
+        json!({"spin": 482_917}),
+        json!({"pin": "<redacted>"}),
+        json!({"pin": "2026-10-18"}),
+    ] {
+        assert!(scan(&v).is_empty(), "{v}");
+    }
+    let found = scan(&json!({"token": "12345678"}));
+    assert_eq!(
+        found[0].kind, "credential_field",
+        "credential keys keep their kind"
+    );
+}
+
+#[test]
+fn pin_code_findings_refuse_the_write_like_any_other() {
+    let err = guard("remember", false, &json!({"text": "PIN is 482917"})).unwrap_err();
+    assert!(
+        err.to_string().contains("pin_code at /text[7..13]"),
+        "{err}"
+    );
 }

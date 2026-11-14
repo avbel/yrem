@@ -53,7 +53,10 @@ fn obj(v: Value) -> Map<String, Value> {
 
 #[tokio::test(flavor = "current_thread")]
 async fn remember_single_fixture() {
-    let srv = FakeServer::start(vec![Step::post("/v1/remember").fixture("remember")]);
+    let srv = FakeServer::start(vec![
+        Step::no_duplicate(),
+        Step::post("/v1/remember").fixture("remember"),
+    ]);
     let out = app(&srv)
         .remember(RememberArgs {
             text: Some(s("Payments service uses PostgreSQL")),
@@ -72,7 +75,7 @@ async fn remember_single_fixture() {
     assert_eq!(out["rid"], "01a18e8a-aa4d-786a-a95e-2944a7bb906a");
     assert_eq!(out["log_index"], 6);
     srv.assert_done();
-    let body = &srv.requests()[0].body;
+    let body = &srv.requests()[1].body;
     assert_eq!(body["text"], "Payments service uses PostgreSQL");
     assert_eq!(body["memory_type"], "semantic");
     assert_eq!(body["importance"], 0.8);
@@ -186,7 +189,10 @@ async fn remember_batch_takes_unset_item_fields_from_top_level() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn remember_clamps_and_parses_created_at() {
-    let srv = FakeServer::start(vec![Step::post("/v1/remember").fixture("remember_minimal")]);
+    let srv = FakeServer::start(vec![
+        Step::no_duplicate(),
+        Step::post("/v1/remember").fixture("remember_minimal"),
+    ]);
     app(&srv)
         .remember(RememberArgs {
             text: Some(s("x")),
@@ -199,7 +205,7 @@ async fn remember_clamps_and_parses_created_at() {
         .await
         .unwrap();
     srv.assert_done();
-    let body = &srv.requests()[0].body;
+    let body = &srv.requests()[1].body;
     assert_eq!(body["importance"], 1.0);
     assert_eq!(body["valence"], -1.0);
     assert_eq!(body["certainty"], 0.0);
@@ -209,7 +215,9 @@ async fn remember_clamps_and_parses_created_at() {
 #[tokio::test(flavor = "current_thread")]
 async fn remember_created_at_forms() {
     let srv = FakeServer::start(vec![
+        Step::no_duplicate(),
         Step::post("/v1/remember").json(json!({"rid": "a"})),
+        Step::no_duplicate(),
         Step::post("/v1/remember").json(json!({"rid": "b"})),
     ]);
     let a = app(&srv);
@@ -222,7 +230,7 @@ async fn remember_created_at_forms() {
         .await
         .unwrap();
     }
-    for r in srv.requests() {
+    for r in srv.requests().iter().filter(|r| r.path == "/v1/remember") {
         assert_eq!(r.body["created_at"].as_f64(), Some(1_767_312_000.0));
     }
 }
@@ -490,6 +498,7 @@ async fn forget_fixture() {
             force: false,
             rid: s("r1"),
             reason: Some(s("dup")),
+            ..ForgetArgs::default()
         })
         .await
         .unwrap();
@@ -635,22 +644,64 @@ async fn conflict_resolve_fixture() {
     srv.assert_done();
 }
 
+// The 0.20 server answers 500 "unknown resolution strategy: dismiss".
 #[tokio::test(flavor = "current_thread")]
-async fn conflict_dismiss_uses_dismiss_strategy() {
-    let srv = FakeServer::start(vec![
+async fn dismiss_is_keep_both_with_a_marked_note() {
+    let dismissed = |note: &'static str| {
         Step::post("/v1/conflicts/c1/resolve")
-            .body(|b| b["strategy"] == "dismiss" && b["resolution_note"] == "noise")
-            .json(json!({"conflict_id": "c1", "strategy": "dismiss"})),
+            .body(move |b| b["strategy"] == "keep_both" && b["resolution_note"] == note)
+            .json(json!({"conflict_id": "c1", "strategy": "keep_both"}))
+    };
+    let srv = FakeServer::start(vec![
+        dismissed("dismissed: noise"),
+        dismissed("dismissed"),
+        dismissed("dismissed: roles"),
     ]);
-    let out = app(&srv)
+    let a = app(&srv);
+    let out = a
         .conflict_dismiss(ConflictDismissArgs {
-            force: false,
             id: s("c1"),
             note: Some(s("noise")),
+            ..ConflictDismissArgs::default()
         })
         .await
         .unwrap();
-    assert_eq!(out["strategy"], "dismiss");
+    assert_eq!(out["strategy"], "keep_both");
+    a.conflict_dismiss(ConflictDismissArgs {
+        id: s("c1"),
+        ..ConflictDismissArgs::default()
+    })
+    .await
+    .unwrap();
+    a.conflict_resolve(ConflictResolveArgs {
+        force: false,
+        id: s("c1"),
+        strategy: Strategy::Dismiss,
+        new_text: None,
+        note: Some(s("roles")),
+    })
+    .await
+    .unwrap();
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn keep_both_sends_the_note_as_given() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/conflicts/c1/resolve")
+            .body(|b| b["strategy"] == "keep_both" && b["resolution_note"] == "both are true")
+            .json(json!({"conflict_id": "c1", "strategy": "keep_both"})),
+    ]);
+    app(&srv)
+        .conflict_resolve(ConflictResolveArgs {
+            force: false,
+            id: s("c1"),
+            strategy: Strategy::KeepBoth,
+            new_text: None,
+            note: Some(s("both are true")),
+        })
+        .await
+        .unwrap();
     srv.assert_done();
 }
 
@@ -917,7 +968,7 @@ async fn call_every_tool_by_name() {
     let cases: Vec<(&str, Value, Step)> = vec![
         (
             "remember",
-            json!({"text": "x"}),
+            json!({"text": "x", "idempotency_key": "k"}),
             Step::post("/v1/remember").fixture("remember"),
         ),
         (
@@ -1210,6 +1261,7 @@ async fn validation_errors_send_nothing() {
             force: false,
             rid: s(" "),
             reason: None,
+            ..ForgetArgs::default()
         })
         .await,
     );
@@ -1508,7 +1560,11 @@ async fn correct_emulated_success_with_overrides() {
         at.ends_with('Z') && at.len() == 20 && at.starts_with("20"),
         "{at}"
     );
-    assert!(new.get("created_at").is_none());
+    assert_eq!(
+        new["created_at"].as_f64(),
+        Some(1_793_392_814.669_719),
+        "the old created_at survives, so a redaction does not look new"
+    );
     assert!(new.get("idempotency_key").is_none());
     let forget = &reqs[3].body;
     assert_eq!(forget["rid"], OLD_RID);
@@ -2354,6 +2410,7 @@ async fn guarded_ops_refuse_before_any_request() {
             rid: s("r1"),
             reason: Some(secret.clone()),
             force: false,
+            ..ForgetArgs::default()
         })
         .await,
         "aws_access_key",
@@ -2420,6 +2477,7 @@ async fn force_lets_guarded_ops_through() {
         rid: s("r1"),
         reason: Some(secret),
         force: true,
+        ..ForgetArgs::default()
     })
     .await
     .unwrap();
@@ -2467,4 +2525,960 @@ async fn correct_redacting_a_secret_is_allowed() {
         .await
         .unwrap();
     srv.assert_done();
+}
+
+// ---------------------------------------------------------------- sensitive, warnings, cascade
+
+fn dup_hit(rid: &str, cosine: f64) -> Value {
+    json!({"results": [{"rid": rid, "text": "t",
+           "why_retrieved": [format!("semantically similar ({cosine})")]}]})
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_sensitive_sets_the_metadata_flag() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember")
+            .body(|b| b["metadata"] == json!({"team": "core", "sensitive": true}))
+            .json(json!({"rid": "a"})),
+        Step::post("/v1/remember/batch")
+            .body(|b| {
+                let flags: Vec<&Value> = b["memories"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|m| &m["metadata"]["sensitive"])
+                    .collect();
+                flags == [&json!(true), &Value::Null, &json!(true)]
+            })
+            .json(json!({"rids": ["a", "b", "c"], "count": 3})),
+    ]);
+    let a = app(&srv);
+    a.remember(RememberArgs {
+        text: Some(s("The offline code is stored elsewhere")),
+        metadata: Some(obj(json!({"team": "core"}))),
+        sensitive: true,
+        ..RememberArgs::default()
+    })
+    .await
+    .unwrap();
+    let item = |text: &str, sensitive| MemoryInput {
+        text: s(text),
+        sensitive,
+        ..MemoryInput::default()
+    };
+    a.remember(RememberArgs {
+        memories: Some(vec![
+            item("one", Some(true)),
+            item("two", None),
+            item("three", Some(true)),
+        ]),
+        ..RememberArgs::default()
+    })
+    .await
+    .unwrap();
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_batch_sensitive_is_a_default_and_an_item_can_opt_out() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember/batch")
+            .body(|b| {
+                let flags: Vec<&Value> = b["memories"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|m| &m["metadata"]["sensitive"])
+                    .collect();
+                flags == [&json!(true), &Value::Null]
+            })
+            .json(json!({"rids": ["a", "b"], "count": 2})),
+    ]);
+    app(&srv)
+        .remember(RememberArgs {
+            sensitive: true,
+            memories: Some(vec![
+                MemoryInput {
+                    text: s("inherits"),
+                    ..MemoryInput::default()
+                },
+                MemoryInput {
+                    text: s("opts out"),
+                    sensitive: Some(false),
+                    ..MemoryInput::default()
+                },
+            ]),
+            ..RememberArgs::default()
+        })
+        .await
+        .unwrap();
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_warns_about_long_text_at_the_boundary() {
+    let srv = FakeServer::start(vec![
+        Step::no_duplicate(),
+        Step::post("/v1/remember").json(json!({"rid": "a"})),
+        Step::no_duplicate(),
+        Step::post("/v1/remember").json(json!({"rid": "b"})),
+    ]);
+    let a = app(&srv);
+    let out = a
+        .remember(RememberArgs {
+            text: Some("é".repeat(1_500)),
+            ..RememberArgs::default()
+        })
+        .await
+        .unwrap();
+    assert!(out.get("warnings").is_none(), "1,500 characters is fine");
+    let out = a
+        .remember(RememberArgs {
+            text: Some("é".repeat(1_501)),
+            ..RememberArgs::default()
+        })
+        .await
+        .unwrap();
+    let w = out["warnings"].as_array().unwrap();
+    assert_eq!(w.len(), 1);
+    let w = w[0].as_str().unwrap();
+    assert!(
+        w.contains("1501") && w.contains("split into separate facts"),
+        "{w}"
+    );
+    assert!(
+        !w.starts_with("memories["),
+        "a single text has no index: {w}"
+    );
+    assert_eq!(out["rid"], "b", "the write still happened");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_batch_warns_per_item_and_checks_no_duplicates() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember/batch").json(json!({"rids": ["a", "b"], "count": 2})),
+    ]);
+    let out = app(&srv)
+        .remember(RememberArgs {
+            memories: Some(vec![
+                MemoryInput {
+                    text: s("short"),
+                    ..MemoryInput::default()
+                },
+                MemoryInput {
+                    text: "x ".repeat(800),
+                    ..MemoryInput::default()
+                },
+            ]),
+            ..RememberArgs::default()
+        })
+        .await
+        .unwrap();
+    let w = out["warnings"].as_array().unwrap();
+    assert_eq!(w.len(), 1);
+    assert!(w[0].as_str().unwrap().starts_with("memories[1]: "), "{w:?}");
+    assert_eq!(srv.calls(), ["POST /v1/remember/batch"]);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_warns_about_a_near_duplicate_and_still_writes() {
+    let text = "Payments uses PostgreSQL 16 ".repeat(60);
+    let query = text.clone();
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall")
+            .body(move |b| {
+                b["top_k"] == 1
+                    && b["skip_reinforce"] == true
+                    && b["namespace"] == "payments"
+                    && b["query"].as_str().unwrap() == query.chars().take(1_000).collect::<String>()
+            })
+            .json(dup_hit("old-rid", 0.92)),
+        Step::post("/v1/remember").json(json!({"rid": "new"})),
+        Step::post("/v1/recall").json(dup_hit("old-rid", 0.91)),
+        Step::post("/v1/remember").json(json!({"rid": "new2"})),
+    ]);
+    let a = app(&srv);
+    let args = || RememberArgs {
+        text: Some(text.clone()),
+        namespace: Some(s("payments")),
+        ..RememberArgs::default()
+    };
+    let out = a.remember(args()).await.unwrap();
+    assert_eq!(out["rid"], "new");
+    let w = out["warnings"].as_array().unwrap();
+    assert_eq!(w.len(), 2, "length and duplicate: {w:?}");
+    let dup = w[1].as_str().unwrap();
+    assert!(
+        dup.contains("old-rid") && dup.contains("0.92") && dup.contains("correct"),
+        "{dup}"
+    );
+    let out = a.remember(args()).await.unwrap();
+    assert_eq!(
+        out["warnings"].as_array().unwrap().len(),
+        1,
+        "0.91 is not a duplicate"
+    );
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_duplicate_check_uses_the_default_namespace() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall")
+            .body(|b| b["namespace"] == "default")
+            .json(json!({"results": [{"rid": "r", "why_retrieved": ["keyword_match"]}]})),
+        Step::post("/v1/remember").json(json!({"rid": "new"})),
+    ]);
+    let out = app(&srv)
+        .remember(RememberArgs {
+            text: Some(s("a fact")),
+            ..RememberArgs::default()
+        })
+        .await
+        .unwrap();
+    assert!(
+        out.get("warnings").is_none(),
+        "no semantic lane: no duplicate claim"
+    );
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failing_duplicate_check_never_blocks_the_write() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall").status(500).raw("boom"),
+        Step::post("/v1/remember").json(json!({"rid": "new"})),
+        Step::post("/v1/recall").status(503).raw("busy"),
+        Step::post("/v1/remember").json(json!({"rid": "new2"})),
+        Step::post("/v1/recall")
+            .json(json!({"results": [{"why_retrieved": ["semantically similar (0.99)"]}]})),
+        Step::post("/v1/remember").json(json!({"rid": "new3"})),
+    ]);
+    let a = app(&srv);
+    for rid in ["new", "new2", "new3"] {
+        let out = a
+            .remember(RememberArgs {
+                text: Some(s("a fact")),
+                ..RememberArgs::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(out["rid"], rid);
+        assert!(out.get("warnings").is_none(), "{out}");
+    }
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_duplicate_check_is_skipped_for_sensitive_forced_and_keyed_writes() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember").json(json!({"rid": "a"})),
+        Step::post("/v1/remember").json(json!({"rid": "b"})),
+        Step::post("/v1/remember").json(json!({"rid": "c"})),
+        Step::post("/v1/remember").json(json!({"rid": "d"})),
+    ]);
+    let a = app(&srv);
+    let base = || RememberArgs {
+        text: Some(s("a fact")),
+        ..RememberArgs::default()
+    };
+    a.remember(RememberArgs {
+        sensitive: true,
+        ..base()
+    })
+    .await
+    .unwrap();
+    a.remember(RememberArgs {
+        force: true,
+        ..base()
+    })
+    .await
+    .unwrap();
+    a.remember(RememberArgs {
+        idempotency_key: Some(s("k")),
+        ..base()
+    })
+    .await
+    .unwrap();
+    a.remember(RememberArgs {
+        metadata: Some(obj(json!({"sensitive": true}))),
+        ..base()
+    })
+    .await
+    .unwrap();
+    assert!(
+        srv.calls().iter().all(|c| c == "POST /v1/remember"),
+        "{:?}",
+        srv.calls()
+    );
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remember_duplicate_check_runs_after_the_secret_guard() {
+    let srv = FakeServer::start(vec![]);
+    let err = app(&srv)
+        .remember(RememberArgs {
+            text: Some(format!("key {}", "AKIA".to_owned() + &"Z".repeat(16))),
+            ..RememberArgs::default()
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Sensitive { .. }), "{err:?}");
+    assert!(
+        srv.requests().is_empty(),
+        "a secret must not go out as a recall query"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn recall_sends_skip_reinforce_only_when_asked() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall")
+            .body(|b| b["skip_reinforce"] == true)
+            .json(json!({"results": []})),
+        Step::post("/v1/recall")
+            .body(|b| b.get("skip_reinforce").is_none())
+            .json(json!({"results": []})),
+    ]);
+    let a = app(&srv);
+    a.recall(RecallArgs {
+        query: s("q"),
+        skip_reinforce: true,
+        ..RecallArgs::default()
+    })
+    .await
+    .unwrap();
+    a.recall(RecallArgs {
+        query: s("q"),
+        ..RecallArgs::default()
+    })
+    .await
+    .unwrap();
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_time_window_overfetches_then_trims_to_top_k() {
+    let cases: [(Option<u32>, u32, usize); 6] = [
+        (Some(5), 15, 5),
+        (Some(34), 100, 34),
+        (Some(40), 100, 40),
+        (None, 30, 10),
+        (Some(100), 100, 100),
+        (Some(150), 150, 150),
+    ];
+    let all: Vec<Value> = (0..200)
+        .map(|i| json!({"rid": format!("r{i}"), "created_at": 1_767_312_000.0 + f64::from(i)}))
+        .collect();
+    let steps: Vec<Step> = cases
+        .iter()
+        .map(|(_, fetch, _)| {
+            let fetch = *fetch;
+            Step::post("/v1/recall")
+                .body(move |b| b["top_k"] == fetch)
+                .json(json!({"results": &all[..fetch as usize]}))
+        })
+        .collect();
+    let srv = FakeServer::start(steps);
+    let a = app(&srv);
+    for (top_k, _, kept) in cases {
+        let out = a
+            .recall(RecallArgs {
+                query: s("q"),
+                top_k,
+                since: Some(s("2026-01-01T00:00:00Z")),
+                ..RecallArgs::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(out["results"].as_array().unwrap().len(), kept, "{top_k:?}");
+        assert!(
+            out.get("filtered_by_time_window").is_none(),
+            "a trim is not a filter"
+        );
+    }
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_time_window_filter_runs_before_the_trim() {
+    let srv = FakeServer::start(vec![hits(json!([
+        {"rid": "old1", "created_at": 1_000.0},
+        {"rid": "old2", "created_at": 1_000.0},
+        {"rid": "in1", "created_at": 1_767_312_000.0},
+        {"rid": "in2", "created_at": 1_767_312_001.0},
+        {"rid": "in3", "created_at": 1_767_312_002.0},
+    ]))]);
+    let out = app(&srv)
+        .recall(RecallArgs {
+            query: s("q"),
+            top_k: Some(2),
+            since: Some(s("2026-01-01T00:00:00Z")),
+            ..RecallArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(rids(&out), ["in1", "in2"]);
+    assert_eq!(out["filtered_by_time_window"], 2);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn without_a_time_window_top_k_is_sent_as_given_and_the_answer_is_not_trimmed() {
+    let three = json!({"results": [{"rid": "a"}, {"rid": "b"}, {"rid": "c"}]});
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall")
+            .body(|b| b["top_k"] == 2)
+            .json(three.clone()),
+        Step::post("/v1/recall")
+            .body(|b| b.get("top_k").is_none())
+            .json(three),
+    ]);
+    let a = app(&srv);
+    for top_k in [Some(2), None] {
+        let out = a
+            .recall(RecallArgs {
+                query: s("q"),
+                top_k,
+                ..RecallArgs::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            rids(&out).len(),
+            3,
+            "the server's answer is not second-guessed"
+        );
+    }
+}
+
+fn long_hit(chars: usize) -> Value {
+    json!({"rid": "r1", "text": "x".repeat(chars),
+           "score": 0.5, "created_at": 1_793_392_814.0, "namespace": "payments",
+           "memory_type": "semantic", "domain": "work", "metadata": {"a": 1},
+           "why_retrieved": ["keyword_match"], "certainty": 1.0})
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn recall_tool_answers_with_snippets_unless_full() {
+    let answer = || json!({"results": [long_hit(300), long_hit(301)], "total": 2});
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall").json(answer()),
+        Step::post("/v1/recall").json(answer()),
+        Step::post("/v1/recall").json(answer()),
+    ]);
+    let a = app(&srv);
+    let slim = a
+        .recall_tool(RecallArgs {
+            query: s("q"),
+            ..RecallArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(slim["total"], 2);
+    let [exact, over] = &slim["results"].as_array().unwrap()[..] else {
+        panic!("{slim}")
+    };
+    let keys: Vec<&str> = exact
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "created_at_iso",
+            "memory_type",
+            "namespace",
+            "rid",
+            "score",
+            "text",
+            "truncated",
+            "why_retrieved"
+        ]
+    );
+    assert_eq!(exact["truncated"], false);
+    assert_eq!(exact["text"].as_str().unwrap().chars().count(), 300);
+    assert_eq!(over["truncated"], true);
+    let t = over["text"].as_str().unwrap();
+    assert_eq!(t.chars().count(), 300);
+    assert!(t.ends_with('…'));
+    assert_eq!(over["created_at_iso"], "2026-10-30T20:40:14Z");
+
+    let full = a
+        .recall_tool(RecallArgs {
+            query: s("q"),
+            full: true,
+            ..RecallArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(full["results"][0]["metadata"], json!({"a": 1}));
+    assert_eq!(
+        full["results"][1]["text"].as_str().unwrap().chars().count(),
+        301
+    );
+
+    // `yrem call recall` prints what `yrem recall` prints; only the MCP tool shortens.
+    let via_call = a.call("recall", json!({"query": "q"})).await.unwrap();
+    assert_eq!(via_call["results"][0]["metadata"], json!({"a": 1}));
+    assert!(via_call["results"][0].get("truncated").is_none());
+    assert_eq!(
+        via_call["results"][1]["text"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .count(),
+        301
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn recall_tool_snippets_tolerate_sparse_hits() {
+    let srv = FakeServer::start(vec![hits(
+        json!([{"rid": "r"}, {"rid": "q", "text": "  a \n b  "}]),
+    )]);
+    let out = app(&srv)
+        .recall_tool(RecallArgs {
+            query: s("q"),
+            ..RecallArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        out["results"][0],
+        json!({"rid": "r", "text": "", "truncated": false})
+    );
+    assert_eq!(out["results"][1]["text"], "a b");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn recall_plain_keeps_full_hits() {
+    let srv = FakeServer::start(vec![hits(json!([long_hit(400)]))]);
+    let out = app(&srv)
+        .recall(RecallArgs {
+            query: s("q"),
+            ..RecallArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["results"][0]["metadata"], json!({"a": 1}));
+    assert_eq!(
+        out["results"][0]["text"].as_str().unwrap().chars().count(),
+        400
+    );
+}
+
+fn memory(rid: &str, metadata: Value) -> Step {
+    Step::get(&format!("/v1/memory/{rid}"))
+        .json(json!({"rid": rid, "text": "t", "metadata_json": metadata}))
+}
+
+fn forgets(srv: &FakeServer) -> Vec<String> {
+    srv.requests()
+        .iter()
+        .filter(|r| r.path == "/v1/forget")
+        .map(|r| r.body["rid"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn forget_step() -> Step {
+    Step::post("/v1/forget").json(json!({"found": true}))
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn forget_cascade_follows_merges_to_every_source() {
+    let srv = FakeServer::start(vec![
+        memory("m", json!({"consolidated_from": ["a", "b"]})),
+        memory("a", json!("{\"consolidated_from\": [\"c\", 5]}")),
+        memory("b", json!({"consolidated_from": ["a", "m"]})),
+        memory("c", json!({"consolidated_from": "not a list"})),
+        forget_step(),
+        forget_step(),
+        forget_step(),
+        forget_step(),
+    ]);
+    let out = app(&srv)
+        .forget(ForgetArgs {
+            rid: s("m"),
+            reason: Some(s("leaked")),
+            cascade: true,
+            ..ForgetArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["found"], true);
+    assert_eq!(out["cascaded"], json!(["a", "b", "c"]));
+    assert_eq!(forgets(&srv), ["m", "a", "b", "c"]);
+    assert!(
+        srv.requests()
+            .iter()
+            .filter(|r| r.path == "/v1/forget")
+            .all(|r| r.body["reason"] == "leaked")
+    );
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn forget_cascade_of_a_plain_memory_forgets_only_it() {
+    let srv = FakeServer::start(vec![memory("m", json!({})), forget_step()]);
+    let out = app(&srv)
+        .forget(ForgetArgs {
+            rid: s("m"),
+            cascade: true,
+            ..ForgetArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["cascaded"], json!([]));
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn forget_without_cascade_reads_nothing() {
+    let srv = FakeServer::start(vec![forget_step()]);
+    let out = app(&srv)
+        .forget(ForgetArgs {
+            rid: s("m"),
+            ..ForgetArgs::default()
+        })
+        .await
+        .unwrap();
+    assert!(out.get("cascaded").is_none());
+    assert_eq!(srv.calls(), ["POST /v1/forget"]);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn forget_cascade_caps_the_number_of_sources() {
+    let sources = |n: usize| -> Vec<String> { (0..n).map(|i| format!("s{i}")).collect() };
+    let mut steps = vec![memory("m", json!({"consolidated_from": sources(50)}))];
+    steps.extend((0..50).map(|i| memory(&format!("s{i}"), json!({}))));
+    steps.extend((0..51).map(|_| forget_step()));
+    let srv = FakeServer::start(steps);
+    let out = app(&srv)
+        .forget(ForgetArgs {
+            rid: s("m"),
+            cascade: true,
+            ..ForgetArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        out["cascaded"].as_array().unwrap().len(),
+        50,
+        "exactly the cap is fine"
+    );
+    srv.assert_done();
+
+    let srv = FakeServer::start(vec![memory("m", json!({"consolidated_from": sources(51)}))]);
+    let err = app(&srv)
+        .forget(ForgetArgs {
+            rid: s("m"),
+            cascade: true,
+            ..ForgetArgs::default()
+        })
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&err, Error::Invalid(m) if m.contains("more than 50")),
+        "{err:?}"
+    );
+    assert!(
+        forgets(&srv).is_empty(),
+        "nothing is forgotten when the cascade is refused"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn forget_cascade_errors_surface_and_a_rerun_finishes() {
+    let srv = FakeServer::start(vec![
+        memory("m", json!({"consolidated_from": ["a"]})),
+        forget_step(),
+        Step::post("/v1/forget").status(503).raw("busy"),
+    ]);
+    let args = || ForgetArgs {
+        rid: s("m"),
+        cascade: true,
+        ..ForgetArgs::default()
+    };
+    let err = app(&srv).forget(args()).await.unwrap_err();
+    assert!(matches!(err, Error::Unavailable(_)), "{err:?}");
+
+    let srv = FakeServer::start(vec![
+        Step::get("/v1/memory/m")
+            .status(404)
+            .json(json!({"error": "x"})),
+    ]);
+    let err = app(&srv).forget(args()).await.unwrap_err();
+    assert!(matches!(err, Error::NotFound(_)), "{err:?}");
+    assert!(forgets(&srv).is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn forget_cascade_checks_the_reason_before_reading_anything() {
+    let srv = FakeServer::start(vec![]);
+    let err = app(&srv)
+        .forget(ForgetArgs {
+            rid: s("m"),
+            reason: Some(format!("{} leaked", "AKIA".to_owned() + &"Z".repeat(16))),
+            cascade: true,
+            ..ForgetArgs::default()
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Sensitive { .. }), "{err:?}");
+    assert!(srv.requests().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn correct_sensitive_merges_the_flag_into_the_metadata() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/correct")
+            .body(|b| b["metadata_merge"] == json!({"k": 1, "sensitive": true}))
+            .json(json!({"new_rid": "n"})),
+        Step::post("/v1/correct")
+            .body(|b| b["metadata_merge"] == json!({"sensitive": true}))
+            .json(json!({"new_rid": "n"})),
+        Step::post("/v1/correct")
+            .body(|b| b.get("metadata_merge").is_none())
+            .json(json!({"new_rid": "n"})),
+    ]);
+    let a = app(&srv);
+    a.correct(CorrectArgs {
+        metadata_merge: Some(obj(json!({"k": 1}))),
+        sensitive: true,
+        ..correct_args()
+    })
+    .await
+    .unwrap();
+    a.correct(CorrectArgs {
+        sensitive: true,
+        ..correct_args()
+    })
+    .await
+    .unwrap();
+    a.correct(correct_args()).await.unwrap();
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn emulated_correct_sensitive_lands_on_the_new_record() {
+    let srv = FakeServer::start(emulation_steps(
+        Step::post("/v1/remember").json(json!({"rid": NEW_RID})),
+        Step::post("/v1/forget").json(json!({"found": true})),
+    ));
+    app(&srv)
+        .correct(CorrectArgs {
+            sensitive: true,
+            ..correct_args()
+        })
+        .await
+        .unwrap();
+    assert_eq!(srv.requests()[2].body["metadata"]["sensitive"], true);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn emulated_correct_without_an_old_created_at_sends_none() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/correct").fixture("correct"),
+        Step::get(&memory_path()).json(json!({"rid": OLD_RID, "text": "old"})),
+        Step::post("/v1/remember").json(json!({"rid": NEW_RID})),
+        Step::post("/v1/forget").json(json!({"found": true})),
+    ]);
+    app(&srv).correct(correct_args()).await.unwrap();
+    assert!(srv.requests()[2].body.get("created_at").is_none());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_source_the_server_no_longer_has_is_a_leaf_of_the_cascade() {
+    let srv = FakeServer::start(vec![
+        memory("m", json!({"consolidated_from": ["gone", "b"]})),
+        Step::get("/v1/memory/gone")
+            .status(404)
+            .json(json!({"error": {"code": "memory_not_found", "message": "gone"}})),
+        memory("b", json!({})),
+        forget_step(),
+        forget_step(),
+        forget_step(),
+    ]);
+    let out = app(&srv)
+        .forget(ForgetArgs {
+            rid: s("m"),
+            cascade: true,
+            ..ForgetArgs::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["cascaded"], json!(["gone", "b"]));
+    assert_eq!(forgets(&srv), ["m", "gone", "b"]);
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_source_that_fails_otherwise_stops_the_cascade() {
+    let srv = FakeServer::start(vec![
+        memory("m", json!({"consolidated_from": ["a"]})),
+        Step::get("/v1/memory/a").status(500).raw("boom"),
+    ]);
+    let err = app(&srv)
+        .forget(ForgetArgs {
+            rid: s("m"),
+            cascade: true,
+            ..ForgetArgs::default()
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Http { status: 500, .. }), "{err:?}");
+    assert!(forgets(&srv).is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn emulated_correct_cascades_to_the_merge_sources_after_the_correction() {
+    let merge = || memory(OLD_RID, json!({"consolidated_from": ["a", "b"]}));
+    let srv = FakeServer::start(vec![
+        merge(),
+        memory("a", json!({"consolidated_from": ["c"]})),
+        memory("b", json!({})),
+        memory("c", json!({})),
+        Step::post("/v1/correct").fixture("correct"),
+        Step::get(&memory_path()).fixture("memory_get"),
+        Step::post("/v1/remember").json(json!({"rid": NEW_RID})),
+        forget_step(),
+        forget_step(),
+        forget_step(),
+        forget_step(),
+    ]);
+    let out = app(&srv)
+        .correct(CorrectArgs {
+            new_text: Some(s("The code is <redacted>")),
+            cascade: true,
+            ..correct_args()
+        })
+        .await
+        .unwrap();
+    assert_eq!(out["emulated"], true);
+    assert_eq!(out["cascaded"], json!(["a", "b", "c"]));
+    assert_eq!(forgets(&srv), [OLD_RID, "a", "b", "c"]);
+    let reasons: Vec<Value> = srv
+        .requests()
+        .iter()
+        .filter(|r| r.path == "/v1/forget")
+        .map(|r| r.body["reason"].clone())
+        .collect();
+    assert!(reasons[0].as_str().unwrap().contains(NEW_RID));
+    assert!(
+        reasons[1..].iter().all(|r| r == "database upgraded"),
+        "{reasons:?}"
+    );
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn native_correct_cascades_too_and_reads_nothing_without_the_flag() {
+    let srv = FakeServer::start(vec![
+        memory(OLD_RID, json!({"consolidated_from": ["a"]})),
+        memory("a", json!({})),
+        Step::post("/v1/correct").json(json!({"new_rid": "n1"})),
+        forget_step(),
+        Step::post("/v1/correct").json(json!({"new_rid": "n2"})),
+    ]);
+    let a = app(&srv);
+    let out = a
+        .correct(CorrectArgs {
+            cascade: true,
+            ..correct_args()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        (out["emulated"].clone(), out["cascaded"].clone()),
+        (json!(false), json!(["a"]))
+    );
+    let out = a.correct(correct_args()).await.unwrap();
+    assert!(out.get("cascaded").is_none());
+    assert_eq!(forgets(&srv), ["a"]);
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_correction_forgets_no_source() {
+    let srv = FakeServer::start(vec![
+        memory(OLD_RID, json!({"consolidated_from": ["a"]})),
+        memory("a", json!({})),
+        Step::post("/v1/correct").status(500).raw("boom"),
+    ]);
+    let err = app(&srv)
+        .correct(CorrectArgs {
+            cascade: true,
+            ..correct_args()
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Http { status: 500, .. }), "{err:?}");
+    assert!(forgets(&srv).is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn correct_cascade_checks_the_secret_guard_before_reading() {
+    let srv = FakeServer::start(vec![]);
+    let err = app(&srv)
+        .correct(CorrectArgs {
+            new_text: Some(format!("key {}", "AKIA".to_owned() + &"Z".repeat(16))),
+            cascade: true,
+            ..correct_args()
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Sensitive { .. }), "{err:?}");
+    assert!(srv.requests().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_emulated_correction_is_not_a_merge() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/correct").fixture("correct"),
+        Step::get(&memory_path()).json(json!({
+            "rid": OLD_RID, "text": "A | B", "created_at": 1_790_000_000.0,
+            "metadata_json": {
+                "consolidated_from": ["a", "b"], "evidence_ids": ["a", "b"], "cluster_size": 2,
+                "consolidation_time": 1.5, "evidence_span_end_at": 2.5,
+                "evidence_span_end_at_iso": "x", "first_mention_at": 3.5,
+                "first_mention_at_iso": "y", "kind": "fact", "team": "core",
+                "event_dates": ["2026-09-18"], "sensitive": true,
+            },
+        })),
+        Step::post("/v1/remember").json(json!({"rid": NEW_RID})),
+        Step::post("/v1/forget").json(json!({"found": true})),
+    ]);
+    app(&srv)
+        .correct(CorrectArgs {
+            metadata_merge: Some(obj(json!({"evidence_ids": "kept on request"}))),
+            ..correct_args()
+        })
+        .await
+        .unwrap();
+    let md = srv.requests()[2].body["metadata"]
+        .as_object()
+        .unwrap()
+        .clone();
+    let mut keys: Vec<&str> = md.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "correct_reason",
+            "corrected_at",
+            "corrects",
+            "event_dates",
+            "evidence_ids",
+            "kind",
+            "sensitive",
+            "team"
+        ]
+    );
+    assert_eq!(
+        md["evidence_ids"], "kept on request",
+        "the caller's own merge wins"
+    );
 }

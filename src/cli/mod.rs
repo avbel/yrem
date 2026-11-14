@@ -126,26 +126,40 @@ Examples:
   echo \"multi-line fact\" | yrem remember --stdin
 
 Several memories at once: yrem call remember '{\"memories\":[{\"text\":\"...\"},{\"text\":\"...\"}]}'
-A refused secret exits 7 and names the findings; redact and retry, or add --force.")]
+A refused secret exits 7 and names the findings; redact and retry, or add --force.
+The answer carries `warnings` for a text over 1,500 characters (split it into facts) and for \
+a single memory that is nearly a stored one (cosine 0.92 or more: use `yrem correct`). The \
+check never blocks the write; it is skipped with --sensitive, --force or --idempotency-key.")]
     Remember(RememberArgs),
     /// Semantic search over memories.
     #[command(after_long_help = "\
 Filters --namespace, --domain and --memory-type are applied by the server; --since, \
 --until, --min-score-ratio and --refine-exclude are applied after the response, and the \
-output reports how many hits each removed as filtered_by_*.
+output reports how many hits each removed as filtered_by_*. With --since or --until \
+the server is asked for three times --top-k (at most 100) and the answer is cut back to \
+--top-k after filtering.
 
 Examples:
   yrem recall \"billing owner\" --namespace work --top-k 5
   yrem recall \"deploys\" --since 7d --order recency")]
     Recall(RecallArgs),
     /// Delete a memory by rid.
+    #[command(
+        long_about = "Delete a memory by rid.\n\nThe server tombstones it: the memory disappears from \
+        recall and memory list, but its text stays in the server's store, index and replication \
+        log. Forgetting is not a way to remove a leaked secret from the server. A server merge \
+        also keeps the memories it was merged from; --cascade forgets those too.\n\n\
+Examples:\n  yrem forget 01a18d82-690f-7a90-b75b-2331ceea45eb --reason \"duplicate\"\n  yrem forget \
+01a18d82-690f-7a90-b75b-2331ceea45eb --cascade"
+    )]
     Forget(ForgetArgs),
     /// Replace a stored fact that changed.
     #[command(
         long_about = "Replace a stored fact that changed.\n\nTries POST /v1/correct; when \
         the server answers 501 it is emulated as get -> remember -> forget. The new record \
-        links the old rid in its metadata and its created_at is now. Exit code 6 means the \
-        new record was written but the old one was not forgotten: retry `yrem forget <old_rid>`.\n\n\
+        links the old rid in its metadata and keeps the old created_at. Exit code 6 means the \
+        new record was written but the old one was not forgotten: retry `yrem forget <old_rid>`. \
+        The old text stays on the server (see `yrem forget --help`).\n\n\
 Examples:\n  yrem correct 01a18d82-690f-7a90-b75b-2331ceea45eb --reason \"migrated\" \
 --new-text \"The service stores data in MySQL\"\n  yrem call correct '{\"rid\":\"...\",\"reason\":\"owner changed\",\
 \"metadata_merge\":{\"team\":\"billing\"}}'\n\n\
@@ -233,7 +247,7 @@ Examples:
     Call(CallArgs),
     /// Agent lifecycle hook for the harness plugins in plugins/.
     #[command(after_long_help = "\
-Reads the harness's event JSON on stdin ({\"session_id\", \"prompt\", \"source\", \
+Reads the harness's event JSON on stdin ({\"session_id\", \"cwd\", \"prompt\", \"source\", \
 \"transcript_path\", \"turns\"}) and prints context to inject: hook JSON for --harness claude \
 or codex, plain text for --harness plain. It never fails: errors go to stderr, the exit code \
 is 0. Settings: YREM_HOOK_* environment variables (see README, Agent hooks).
@@ -263,7 +277,7 @@ pub enum ConflictCommand {
     List(ConflictListArgs),
     /// Resolve a conflict.
     Resolve(ConflictResolveArgs),
-    /// Resolve with strategy `dismiss`.
+    /// Close a conflict as noise; the note is marked "dismissed".
     Dismiss(ConflictDismissArgs),
 }
 

@@ -90,7 +90,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Semantic search over memories. Returns ranked hits with rids.",
+        description = "Semantic search over memories. Ranked hits with 300-character snippets; memory_get for full text.",
         input_schema = compact_schema::<RecallArgs>(),
         annotations(read_only_hint = true, open_world_hint = false)
     )]
@@ -99,11 +99,11 @@ impl Server {
         Parameters(a): Parameters<RecallArgs>,
         ctx: RequestContext<RoleServer>,
     ) -> ToolResult {
-        cancellable(&ctx, async || self.app.recall(a).await).await
+        cancellable(&ctx, async || self.app.recall_tool(a).await).await
     }
 
     #[tool(
-        description = "Delete a memory by rid.",
+        description = "Delete a memory by rid. Text stays on the server; cascade also forgets merge sources.",
         input_schema = compact_schema::<ForgetArgs>(),
         annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = true, open_world_hint = false)
     )]
@@ -116,7 +116,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Replace a changed fact. New record links the old rid; created_at becomes now.",
+        description = "Replace a changed fact. New record links the old rid and keeps created_at.",
         input_schema = compact_schema::<CorrectArgs>(),
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false)
     )]

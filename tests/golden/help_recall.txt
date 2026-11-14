@@ -59,6 +59,9 @@ Options:
       --refine-exclude <REFINE_EXCLUDE>...
           Rids to leave out, e.g. hits you already saw in a previous recall.
 
+      --skip-reinforce
+          Ask the server not to reinforce the returned memories. By default every recall raises their access count and half-life.
+
       --stdin
           Read the query from stdin instead of the QUERY argument.
 
@@ -68,7 +71,7 @@ Options:
   -V, --version
           Print version
 
-Filters --namespace, --domain and --memory-type are applied by the server; --since, --until, --min-score-ratio and --refine-exclude are applied after the response, and the output reports how many hits each removed as filtered_by_*.
+Filters --namespace, --domain and --memory-type are applied by the server; --since, --until, --min-score-ratio and --refine-exclude are applied after the response, and the output reports how many hits each removed as filtered_by_*. With --since or --until the server is asked for three times --top-k (at most 100) and the answer is cut back to --top-k after filtering.
 
 Examples:
   yrem recall "billing owner" --namespace work --top-k 5

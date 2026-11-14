@@ -11,7 +11,7 @@ use yrem::ops::*;
 
 /// Fields only on the CLI (`#[serde(skip)]`) and only in MCP (`#[arg(skip)]`).
 const CLI_ONLY: &[&str] = &["stdin"];
-const MCP_ONLY: &[&str] = &["metadata", "memories", "metadata_merge"];
+const MCP_ONLY: &[&str] = &["metadata", "memories", "metadata_merge", "full"];
 
 fn check<T: Args + JsonSchema + DeserializeOwned + std::fmt::Debug + 'static>(name: &'static str) {
     let schema = Value::Object(yrem::mcp::compact_schema::<T>().as_ref().clone());
