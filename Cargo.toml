@@ -15,7 +15,7 @@ default = ["tls"]
 tls = ["reqwest/rustls"]   # rustls + aws-lc-rs (C); `--no-default-features` builds a plain-HTTP, C-free binary
 
 [dependencies]
-rmcp = { version = "3.8.0", features = ["transport-io"] }   # defaults: server, macros, base64
+rmcp = { version = "3.10.0", features = ["transport-io"] }   # defaults: server, macros, base64
 tokio = { version = "1.54.1", features = ["rt", "macros", "time"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
@@ -30,7 +30,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "env-filter", "std"] }
 
 [dev-dependencies]
-rmcp = { version = "3.8.0", features = ["client", "transport-child-process"] }
+rmcp = { version = "3.10.0", features = ["client", "transport-child-process"] }
 tokio = { version = "1.54.1", features = ["rt", "macros", "net", "io-util", "time", "process"] }
 
 [lints.rust]

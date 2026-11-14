@@ -169,11 +169,18 @@ struct Run {
 pub(super) fn scan(toks: &[Tok], hits: &mut Vec<Hit>, claimed: &mut Claimed) {
     for (i, key) in toks.iter().enumerate() {
         for split in splits(key) {
+            let pieces = pieces(toks, i, &split);
+            // Most keywords have no digits near them; skip the noun checks, which allocate.
+            if !pieces
+                .iter()
+                .any(|p| p.text.bytes().any(|b| b.is_ascii_digit()))
+            {
+                continue;
+            }
             let noun = split.attached
                 || never_a_verb(split.name)
                 || after_determiner(toks, i)
                 || before_linking_word(toks, i);
-            let pieces = pieces(toks, i, &split);
             if let Some(range) = find(&pieces, noun, claimed) {
                 hits.push(Hit {
                     kind: "pin_code",
@@ -248,10 +255,9 @@ fn ends_sentence(raw: &str) -> bool {
 }
 
 fn is_time(text: &str) -> bool {
-    let parts: Vec<&str> = text.split(':').collect();
-    (2..=3).contains(&parts.len())
-        && parts
-            .iter()
+    (2..=3).contains(&text.split(':').count())
+        && text
+            .split(':')
             .all(|p| (1..=2).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit()))
 }
 

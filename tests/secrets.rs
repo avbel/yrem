@@ -634,7 +634,14 @@ fn secrets_in_object_keys_are_found_and_never_echoed() {
 
 #[test]
 fn pathological_input_scans_in_linear_time() {
-    let start = std::time::Instant::now();
+    // Growth, not wall time: a debug build on a shared macOS runner is twice as slow as a
+    // laptop, while a quadratic scan grows 100x from 50 kB to 500 kB.
+    let time = |unit: &str, size: usize| {
+        let big = unit.repeat(size / unit.len());
+        let start = std::time::Instant::now();
+        let _ = text(&big);
+        start.elapsed()
+    };
     for unit in [
         "=",
         "a=",
@@ -645,10 +652,10 @@ fn pathological_input_scans_in_linear_time() {
         "pin 22:15 ",
         "-pin=",
     ] {
-        let big = unit.repeat(1_000_000 / unit.len());
-        let _ = text(&big);
+        let small = time(unit, 50_000).max(std::time::Duration::from_millis(5));
+        let large = time(unit, 500_000);
+        assert!(large < small * 30, "{unit:?}: {small:?} -> {large:?}");
     }
-    assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
 }
 
 #[test]
