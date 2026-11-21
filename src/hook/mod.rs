@@ -29,7 +29,7 @@ use serde_json::Value;
 use crate::client::Client;
 use crate::config::{Config, Overrides};
 use crate::error::Error;
-use crate::ops::{App, RecallArgs, SessionCaptureArgs, SessionEndArgs};
+use crate::ops::{App, Outbox, RecallArgs, SessionCaptureArgs, SessionEndArgs};
 use crate::ops::{SessionStartArgs, ThinkArgs};
 use crate::output;
 use crate::secrets;
@@ -246,7 +246,15 @@ impl Hook<'_> {
                 self.track(&app).await;
             }
         };
-        let (text, ()) = tokio::join!(self.briefing(&app), track);
+        let outbox = app.clone().with_outbox(Outbox::from_env(
+            &|k| std::env::var(k).ok(),
+            app.client.base().as_str(),
+        ));
+        let (text, (), _) = tokio::join!(
+            self.briefing(&app),
+            track,
+            outbox.flush_outbox(crate::ops::FLUSH_BUDGET)
+        );
         text
     }
 
@@ -311,7 +319,11 @@ impl Hook<'_> {
             .filter(|h| self.gate.reject(h).is_none())
             .collect();
         self.gate.prioritize(&mut candidates);
-        let mut vetter = Vetter::new(app.client.clone(), TokioInstant::now() + LINEAGE_BUDGET);
+        let mut vetter = Vetter::new(
+            app.client.clone(),
+            TokioInstant::now() + LINEAGE_BUDGET,
+            !self.gate.include_captured,
+        );
         let mut hits: Vec<&Value> = Vec::new();
         for h in candidates {
             if hits.len() == s.top_k {

@@ -80,9 +80,7 @@ impl Gate {
             return Some("superseded");
         }
         if !self.include_captured {
-            if row.get("source").and_then(Value::as_str) == Some(AUTO_CAPTURE)
-                || meta.get("kind").and_then(Value::as_str) == Some(AUTO_CAPTURE)
-            {
+            if is_captured(row.get("source").and_then(Value::as_str), &meta) {
                 return Some("auto-capture");
             }
             let text = row.get("text").and_then(Value::as_str).unwrap_or("");
@@ -215,6 +213,13 @@ pub fn parse_metadata(v: &Value) -> Value {
         Value::String(s) => serde_json::from_str(s).unwrap_or(Value::Null),
         other => other.clone(),
     }
+}
+
+/// Whether a memory with this `source` and metadata was captured from a session, not stored
+/// on purpose.
+#[must_use]
+pub fn is_captured(source: Option<&str>, meta: &Value) -> bool {
+    source == Some(AUTO_CAPTURE) || meta.get("kind").and_then(Value::as_str) == Some(AUTO_CAPTURE)
 }
 
 /// Whether `meta` marks a memory as sensitive.

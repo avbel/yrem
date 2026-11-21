@@ -49,7 +49,8 @@ fn base(url: Option<&str>) -> Command {
         .env_remove("YREM_URL")
         .env_remove("YREM_TOKEN")
         .env_remove("RUST_LOG")
-        .env("NO_COLOR", "1");
+        .env("NO_COLOR", "1")
+        .env("YREM_OUTBOX_DIR", "off");
     if let Some(url) = url {
         c.env("YREM_URL", url).env("YREM_TOKEN", TOKEN);
     }
@@ -721,6 +722,7 @@ fn tty(srv: &FakeServer, args: &str) -> Option<String> {
         .env("YREM_TOKEN", TOKEN)
         .env("XDG_CONFIG_HOME", "/nonexistent")
         .env("NO_COLOR", "1")
+        .env("YREM_OUTBOX_DIR", "off")
         .env_remove("YANTRIKDB_SERVER_URL")
         .env_remove("YANTRIKDB_TOKEN")
         .env_remove("YREM_CONFIG")
@@ -1464,4 +1466,50 @@ fn call_type_errors_do_not_echo_the_value() {
     let out = yrem(&srv, &["call", "remember", r#"{"text": 5}"#]);
     assert!(out.stderr.contains("expected a string"), "{}", out.stderr);
     assert!(srv.requests().is_empty());
+}
+
+// ------------------------------------------------------------ outbox
+
+fn outbox_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("yrem-cli-outbox-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
+
+#[test]
+fn a_write_to_an_unreachable_server_is_queued_with_exit_8() {
+    let dir = outbox_dir("dead");
+    let mut c = base(Some(&dead_url()));
+    c.env("YREM_OUTBOX_DIR", &dir)
+        .args(["remember", "Releases ship on Tuesdays"]);
+    let out = run(c, None);
+    assert_eq!(out.code, 8, "{}", out.stderr);
+    assert_eq!(out.json()["queued"], true);
+    assert_eq!(out.json()["pending"], 1);
+    assert!(out.json().get("rid").is_none(), "nothing is stored yet");
+}
+
+#[test]
+fn session_start_sends_what_was_queued() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall").json(json!({"results": []})),
+        Step::post("/v1/remember").status(503).raw("busy"),
+        Step::post("/v1/remember")
+            .body(|b| b["text"] == "Releases ship on Tuesdays")
+            .json(json!({"rid": "a"})),
+    ]);
+    let dir = outbox_dir("hook");
+    let mut c = base(Some(&srv.url));
+    c.env("YREM_OUTBOX_DIR", &dir)
+        .args(["remember", "Releases ship on Tuesdays"]);
+    assert_eq!(run(c, None).code, 8);
+
+    let mut c = base(Some(&srv.url));
+    c.env("YREM_OUTBOX_DIR", &dir)
+        .env("YREM_HOOK_STATE_DIR", dir.join("hooks"))
+        .env("YREM_HOOK_TRACK_SESSION", "0")
+        .args(["hook", "session-start", "--harness", "claude"]);
+    let out = run(c, Some(r#"{"session_id": "o1"}"#));
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    srv.assert_done();
 }

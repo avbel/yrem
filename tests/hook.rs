@@ -394,6 +394,55 @@ mod units {
     }
 
     #[test]
+    fn the_mid_turn_wrapper_leaves_only_what_the_user_typed() {
+        let queued = "The user sent a new message while you were working:\nwe must not allow \
+            header x-powered-by or similar\n\nThis is how Claude Code surfaces messages the user \
+            sends mid-turn — within the running turn, often alongside the next tool result, \
+            rather than as a separate conversation turn. Address the message above as you \
+            continue this turn.";
+        assert_eq!(
+            clean(queued),
+            Some("we must not allow header x-powered-by or similar.".into())
+        );
+        assert_eq!(
+            clean("Address the message above as you continue this turn."),
+            None
+        );
+    }
+
+    #[test]
+    fn requests_for_work_are_not_captured() {
+        for request in [
+            "commit and push",
+            "task 387. close it after finishing.",
+            "ok. send me sql to execute.",
+            "please check the logs, then deploy to preprod",
+            "go on",
+            "Can you research modern Linux security features",
+            "#401 #402",
+        ] {
+            assert_eq!(clean(request), None, "{request}");
+        }
+        for fact in [
+            "We deploy on Fridays",
+            "Use the staging cluster for load tests",
+            "Never deploy on Fridays",
+            "Carol is on call this week",
+            "commit and push. The release branch is called stable",
+            "commit and push\nThe release branch is called stable",
+            "Fix the login bug\nWe decided to use JWT for sessions",
+            "Do not mock the database in integration tests.",
+            "Run cargo fmt before every commit.",
+            "Commit messages use conventional commits.",
+            "Test coverage must stay above 80 percent.",
+            "Deploy on Fridays is forbidden.",
+            "Plan B is to migrate to Postgres.",
+        ] {
+            assert!(clean(fact).is_some(), "{fact}");
+        }
+    }
+
+    #[test]
     fn long_transcripts_are_read_from_the_tail() {
         let dir = temp("tail");
         let path = dir.join("t.jsonl");

@@ -21,6 +21,7 @@ fn command(url: &str) -> tokio::process::Command {
             .env("YREM_URL", url)
             .env("YREM_TOKEN", TOKEN)
             .env("XDG_CONFIG_HOME", "/nonexistent")
+            .env("YREM_OUTBOX_DIR", "off")
             .env_remove("YANTRIKDB_SERVER_URL")
             .env_remove("YANTRIKDB_TOKEN")
             .env_remove("YREM_CONFIG");
@@ -512,6 +513,7 @@ async fn missing_config_fails_fast() {
         .env_remove("YANTRIKDB_SERVER_URL")
         .env_remove("YREM_CONFIG")
         .env("XDG_CONFIG_HOME", "/nonexistent")
+        .env("YREM_OUTBOX_DIR", "off")
         .stdin(Stdio::null())
         .output()
         .await

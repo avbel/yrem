@@ -43,8 +43,13 @@ Settings are `YREM_HOOK_*` environment variables, documented in
   for the digest and two listings at once and waits 8 seconds at most.
 - Capture (`YREM_HOOK_CAPTURE=1`) sends each user line at most once per session and skips lines
   already in memory (semantic similarity ≥ 0.92), so `PreCompact` and `SessionEnd` never store
-  the same fact twice. It writes to the project namespace. Turning it on does not make recall
-  inject captured rows; that is `YREM_HOOK_INJECT_CAPTURED`.
+  the same fact twice. It skips lines that only ask for work (`commit and push`, `go on`,
+  `task 387`) and reads messages typed mid-turn without Claude Code's wrapper text. It writes to
+  the project namespace. Turning it on does not make recall inject captured rows, nor merges
+  made from them; that is `YREM_HOOK_INJECT_CAPTURED`.
+- The briefing shows only the project's rows (`YREM_HOOK_OTHER_PROJECTS=N` adds recent rows of
+  other projects) and is skipped outside a git repository (`YREM_HOOK_BRIEF_WITHOUT_PROJECT=1`
+  brings it back). Session start also sends writes queued while the server was unreachable.
 - Do not run these next to the `yantrikdb-*` plugins; every prompt would be recalled twice.
 - The plugins do not bundle the MCP server, so the tools are never registered twice. Add it
   yourself:

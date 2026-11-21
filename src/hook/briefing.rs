@@ -19,8 +19,10 @@ const BUDGET: Duration = Duration::from_secs(8);
 impl Hook<'_> {
     pub(super) async fn briefing(&self, app: &App) -> anyhow::Result<Option<String>> {
         let s = &self.settings;
+        // Outside a project every row it could show belongs to some other project.
         if !s.digest
             || self.headless
+            || (self.project.is_none() && !s.brief_without_project)
             || !self
                 .store
                 .claim_digest(self.session(), self.input.source.as_deref())
@@ -67,7 +69,7 @@ impl Hook<'_> {
         );
         let digest = digest.map_err(|_| Error::Unavailable("the digest timed out".into()))??;
 
-        let mut vetter = Vetter::new(app.client.clone(), deadline);
+        let mut vetter = Vetter::new(app.client.clone(), deadline, !self.gate.include_captured);
         let listed: Vec<Value> = recent.iter().chain(&in_project).cloned().collect();
         let narrative = self.vetted_narrative(&mut vetter, &digest, &listed).await;
         let mut excluded: Vec<String> = narrative.iter().map(|(rid, _)| rid.clone()).collect();
@@ -77,6 +79,7 @@ impl Hook<'_> {
                 &in_project,
                 &self.gate,
                 self.settings.decisions,
+                self.settings.other_projects,
                 super::now_secs(),
                 &excluded,
             );

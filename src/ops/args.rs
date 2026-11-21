@@ -4,7 +4,7 @@
 
 use clap::{Args, ValueEnum};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, JsonSchema)]
@@ -260,7 +260,7 @@ pub struct RecallArgs {
     pub stdin: bool,
 }
 
-#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ForgetArgs {
     #[arg(
@@ -285,7 +285,7 @@ pub struct ForgetArgs {
     pub force: bool,
 }
 
-#[derive(Debug, Clone, Default, Args, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CorrectArgs {
     #[arg(long_help = "Id of the memory to replace.")]
@@ -295,8 +295,12 @@ pub struct CorrectArgs {
     pub reason: String,
     #[arg(
         long_help = "Replacement text; omit to keep the old text and change only the other fields.",
-        long
+        long,
+        alias = "text"
     )]
+    // Agents pass `text`, the field name of `remember`: 3 of 12 corrections in one week failed
+    // on it.
+    #[serde(alias = "text")]
     pub new_text: Option<String>,
     #[arg(
         long_help = "New importance, 0.0 to 1.0; omit to keep the old value.",

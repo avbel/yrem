@@ -339,8 +339,11 @@ fn rec(rid: &str, ns: &str, text: &str, age_days: f64) -> Value {
            "created_at_iso": format!("2026-01-{:02}T00:00:00Z", 30_u32.saturating_sub(age_days as u32).max(1)), "metadata": {}})
 }
 
+/// Rows of other projects these tests opt into (`YREM_HOOK_OTHER_PROJECTS=2`).
+const OTHERS: usize = 2;
+
 fn select(recent: &[Value], in_project: &[Value], gate: &Gate, limit: usize) -> Vec<Decision> {
-    decisions::select(recent, in_project, gate, limit, NOW, &[])
+    decisions::select(recent, in_project, gate, limit, OTHERS, NOW, &[])
 }
 
 fn rids(d: &[Decision]) -> Vec<&str> {
@@ -370,6 +373,17 @@ fn decisions_are_the_projects_newest_then_two_recent_rows() {
     assert_eq!(picked[0].text, "About Fluidd");
     let limited = select(&recent, &in_project, &g, 2);
     assert_eq!(rids(&limited), ["n1", "p1", "a", "b"]);
+}
+
+#[test]
+fn other_projects_are_left_out_unless_asked_for() {
+    let recent = vec![
+        rec("a", "other", "Other news", 1.0),
+        rec("p1", "fluidd", "Fluidd one", 3.0),
+    ];
+    let g = gate(Some("fluidd"));
+    let picked = decisions::select(&recent, &[], &g, 5, 0, NOW, &[]);
+    assert_eq!(rids(&picked), ["p1"]);
 }
 
 #[test]
@@ -604,10 +618,26 @@ fn excluded_rids_are_never_picked() {
         rec("c", "other", "Other c", 1.5),
     ];
     let excluded = ["a".to_owned(), "c".to_owned()];
-    let picked = decisions::select(&recent, &[], &gate(Some("fluidd")), 5, NOW, &excluded);
+    let picked = decisions::select(
+        &recent,
+        &[],
+        &gate(Some("fluidd")),
+        5,
+        OTHERS,
+        NOW,
+        &excluded,
+    );
     assert_eq!(rids(&picked), ["b"]);
     let in_project = vec![rec("a", "fluidd", "Fluidd a", 1.0)];
-    let picked = decisions::select(&[], &in_project, &gate(Some("fluidd")), 5, NOW, &excluded);
+    let picked = decisions::select(
+        &[],
+        &in_project,
+        &gate(Some("fluidd")),
+        5,
+        OTHERS,
+        NOW,
+        &excluded,
+    );
     assert!(
         picked.is_empty(),
         "the project's own listing is filtered too"

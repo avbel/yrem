@@ -33,7 +33,11 @@ pub struct Settings {
     /// Directory name to project name, for renamed repositories.
     pub aliases: Vec<(String, String)>,
     pub digest: bool,
+    /// Brief sessions that have no project.
+    pub brief_without_project: bool,
     pub decisions: usize,
+    /// Recent rows of other projects added to the project's decisions.
+    pub other_projects: usize,
     pub maintenance: Maintenance,
     pub recall: bool,
     pub top_k: usize,
@@ -65,7 +69,9 @@ impl Settings {
             namespace: get("NAMESPACE"),
             aliases: get("NAMESPACE_ALIASES").map_or_else(Vec::new, |v| parse_aliases(&v)),
             digest: flag("DIGEST", true),
+            brief_without_project: flag("BRIEF_WITHOUT_PROJECT", false),
             decisions: num("DECISIONS", 5),
+            other_projects: num("OTHER_PROJECTS", 0),
             maintenance: get("MAINTENANCE").map_or_else(Maintenance::default, |v| {
                 Maintenance::parse(&v).unwrap_or_else(|| {
                     eprintln!(

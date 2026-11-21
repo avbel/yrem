@@ -49,6 +49,7 @@ fn spawn(envs: &[(&str, &str)], args: &[&str], stdin: Option<&str>) -> Out {
     cmd.arg("--compact")
         .args(args)
         .env("YREM_CONFIG", "/dev/null")
+        .env("YREM_OUTBOX_DIR", "off")
         .env("NO_COLOR", "1")
         .stdin(if stdin.is_some() {
             Stdio::piped()

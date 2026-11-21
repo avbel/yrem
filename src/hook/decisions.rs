@@ -14,7 +14,6 @@ pub const FETCH_RECENT: u32 = 100;
 pub const FETCH_PROJECT: u32 = 50;
 /// Rows from other namespaces that still make the list, when this recent.
 const RECENT_SECS: f64 = 7.0 * 86_400.0;
-const RECENT_OTHER: usize = 2;
 
 /// One decision line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +35,8 @@ pub fn records(answer: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-/// Picks up to `limit` decisions of the project, then the recent rows of other namespaces.
+/// Picks up to `limit` decisions of the project, then up to `others` recent rows of other
+/// namespaces.
 ///
 /// `recent` is a listing of every namespace, `in_project` one of the project's namespace.
 /// A project row is one whose namespace or text names the project. Without a project every
@@ -48,6 +48,7 @@ pub fn select(
     in_project: &[Value],
     gate: &Gate,
     limit: usize,
+    others: usize,
     now: f64,
     excluded: &[String],
 ) -> Vec<Decision> {
@@ -66,7 +67,7 @@ pub fn select(
         }
     }
     let others = if gate.project.is_some() {
-        RECENT_OTHER
+        others
     } else {
         limit
     };

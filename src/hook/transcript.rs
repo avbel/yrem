@@ -57,6 +57,118 @@ const CODEX_SUGGESTIONS: (&str, &str) = (
     "# Overview",
     "Generate 0 to 3 hyperpersonalized suggestions",
 );
+const QUEUED_HEAD: &str = "The user sent a new message while you were working:";
+/// Sentences Claude Code appends to a queued message, as (start, end) markers.
+const QUEUED_NOTES: &[(&str, &str)] = &[
+    (
+        "This is how Claude Code surfaces messages the user sends mid-turn",
+        "separate conversation turn.",
+    ),
+    (
+        "Address the message above as you continue this turn",
+        "continue this turn.",
+    ),
+];
+/// Words a request may open with before its verb.
+const REQUEST_LEADS: &[&str] = &[
+    "ok", "okay", "yes", "yeah", "no", "sure", "thanks", "please", "pls", "now", "then", "and",
+    "also", "so", "just", "first", "next", "again", "let's", "lets", "can", "could", "would",
+    "you", "u",
+];
+/// Verbs of the requests users type while a session works. Measured on a real store: 249 of
+/// 315 captured prompts were such requests ("commit and push", "go on", "task 387. close it").
+const REQUEST_VERBS: &[&str] = &[
+    "add",
+    "analyse",
+    "analyze",
+    "ask",
+    "build",
+    "check",
+    "clean",
+    "close",
+    "commit",
+    "compare",
+    "consult",
+    "continue",
+    "copy",
+    "create",
+    "debug",
+    "delete",
+    "deploy",
+    "draft",
+    "explain",
+    "find",
+    "finish",
+    "fix",
+    "go",
+    "help",
+    "implement",
+    "install",
+    "investigate",
+    "list",
+    "load",
+    "look",
+    "make",
+    "measure",
+    "merge",
+    "move",
+    "open",
+    "plan",
+    "prepare",
+    "proceed",
+    "publish",
+    "pull",
+    "push",
+    "read",
+    "rebase",
+    "recheck",
+    "refactor",
+    "reinstall",
+    "release",
+    "remove",
+    "rename",
+    "rerun",
+    "research",
+    "restart",
+    "retry",
+    "review",
+    "run",
+    "search",
+    "send",
+    "set",
+    "show",
+    "start",
+    "stop",
+    "summarize",
+    "switch",
+    "tell",
+    "test",
+    "try",
+    "update",
+    "upgrade",
+    "verify",
+    "wait",
+    "write",
+];
+/// Words of a rule or a fact; a sentence with one is kept even when it opens with a verb.
+const RULE_MARKERS: &[&str] = &[
+    "not",
+    "never",
+    "always",
+    "must",
+    "should",
+    "every",
+    "each",
+    "is",
+    "are",
+    "was",
+    "were",
+    "only",
+    "use",
+    "uses",
+    "means",
+    "forbidden",
+];
 const META_SPANS: &[&str] = &[
     "system-reminder",
     "task-notification",
@@ -94,11 +206,13 @@ pub fn is_headless_session(path: &Path) -> bool {
         .any(|l| serde_json::from_str::<Value>(l.trim()).is_ok_and(|r| is_headless(&r)))
 }
 
-/// Cleans one user turn; `None` for harness bookkeeping and fragments.
+/// Cleans one user turn; `None` for harness bookkeeping, fragments and turns that only ask
+/// for work.
 #[must_use]
 pub fn clean(text: &str) -> Option<String> {
-    let flat = strip_harness(text)?;
-    if flat.chars().count() < MIN_LINE_CHARS {
+    let lines = strip_lines(text)?;
+    let flat = collapse(&lines);
+    if flat.chars().count() < MIN_LINE_CHARS || is_request_only(&lines) {
         return None;
     }
     Some(if flat.ends_with(['.', '!', '?']) {
@@ -112,6 +226,11 @@ pub fn clean(text: &str) -> Option<String> {
 /// turns the harness wrote, and for text with an IDE block that never closes.
 #[must_use]
 pub fn strip_harness(text: &str) -> Option<String> {
+    strip_lines(text).map(|t| collapse(&t))
+}
+
+/// [`strip_harness`] with line breaks kept: a line break ends a sentence.
+fn strip_lines(text: &str) -> Option<String> {
     let text = strip_ide_blocks(text)?;
     if is_meta(&text) {
         return None;
@@ -120,7 +239,65 @@ pub fn strip_harness(text: &str) -> Option<String> {
     for tag in META_SPANS {
         out = strip_spans(&out, tag);
     }
-    Some(out.split_whitespace().collect::<Vec<_>>().join(" "))
+    Some(unwrap_queued(&out))
+}
+
+fn collapse(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The user's words from Claude Code's mid-turn wrapper ("The user sent a new message while
+/// you were working: … This is how Claude Code surfaces messages … Address the message above
+/// as you continue this turn."). In a real store 54 memories carried it, and 83 of 229
+/// briefing lines in one week.
+fn unwrap_queued(text: &str) -> String {
+    let mut out = text.replace(QUEUED_HEAD, " ");
+    for (head, tail) in QUEUED_NOTES {
+        while let Some(start) = out.find(head) {
+            let end = out[start..]
+                .find(tail)
+                .map_or(start + head.len(), |i| start + i + tail.len());
+            out.replace_range(start..end, " ");
+        }
+    }
+    out
+}
+
+/// Whether every sentence of `text` asks for work ("commit and push", "check why CI failed.
+/// deploy to preprod"): an instruction for this session, not a fact for the next one.
+fn is_request_only(text: &str) -> bool {
+    let mut sentences = text
+        .split(['.', '!', '?', ';', ',', '\n'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .peekable();
+    sentences.peek().is_some() && sentences.all(is_request)
+}
+
+/// A sentence that starts with a work verb ("commit it", "please check the logs"), is only
+/// an acknowledgement ("ok", "go on"), or only names a task ("task 387", "#401"). One that
+/// states a rule is not a request, whatever its first word: "Run cargo fmt before every
+/// commit", "Deploy on Fridays is forbidden".
+fn is_request(sentence: &str) -> bool {
+    let lower = sentence.to_lowercase();
+    let words: Vec<&str> = lower
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric() && c != '\''))
+        .filter(|w| !w.is_empty())
+        .skip_while(|w| REQUEST_LEADS.contains(w))
+        .collect();
+    if words.iter().any(|w| RULE_MARKERS.contains(w)) {
+        return false;
+    }
+    words
+        .first()
+        .is_none_or(|first| REQUEST_VERBS.contains(first))
+        || words.iter().all(|w| is_task_reference(w))
+}
+
+fn is_task_reference(word: &str) -> bool {
+    matches!(word, "task" | "tasks" | "issue" | "issues")
+        || word.chars().all(|c| c.is_ascii_digit())
 }
 
 fn is_meta(text: &str) -> bool {
@@ -222,13 +399,18 @@ fn user_text(record: &Value) -> Option<String> {
     if flag("isMeta") || flag("isSidechain") || flag("isCompactSummary") {
         return None;
     }
-    // Codex: {"type":"response_item","payload":{"type":"message","role":"user","content":[...]}}
-    let msg = if record.get("type").and_then(Value::as_str) == Some("response_item") {
-        let p = record.get("payload")?;
-        (p.get("type").and_then(Value::as_str) == Some("message")).then_some(p)?
-    } else {
-        // Claude Code: {"type":"user","message":{"role":"user","content":...}}
-        record.get("message")?
+    let msg = match record.get("type").and_then(Value::as_str) {
+        // Codex: {"type":"response_item","payload":{"type":"message","role":"user","content":[...]}}
+        Some("response_item") => {
+            let p = record.get("payload")?;
+            (p.get("type").and_then(Value::as_str) == Some("message")).then_some(p)?
+        }
+        // Claude Code: {"type":"user","message":{"role":"user","content":...}}. Other record
+        // types carry user-role messages too: `api-request-blob` holds a copy of each API
+        // request, skill bodies and tool results included.
+        Some("user") => record.get("message")?,
+        Some("attachment") => return queued_prompt(record.get("attachment")?),
+        _ => return None,
     };
     if msg.get("role").and_then(Value::as_str) != Some("user") {
         return None;
@@ -254,6 +436,32 @@ fn user_text(record: &Value) -> Option<String> {
                 })
                 .filter_map(|b| b.get("text").and_then(Value::as_str))
                 .filter(|t| !is_meta(t))
+                .collect();
+            (!parts.is_empty()).then(|| parts.join("\n"))
+        }
+        _ => None,
+    }
+}
+
+/// What the user typed while Claude Code was working: a `queued_command` attachment of human
+/// origin (`origin.kind`, or `humanTurn` where there is no `origin`). Its rendered form wraps
+/// the prompt in harness text; `prompt` is the user's own, a string or content blocks.
+fn queued_prompt(attachment: &Value) -> Option<String> {
+    let field = |k: &str| attachment.get(k).and_then(Value::as_str);
+    let human = match attachment.get("origin") {
+        Some(origin) => origin.get("kind").and_then(Value::as_str) == Some("human"),
+        None => attachment.get("humanTurn").and_then(Value::as_bool) == Some(true),
+    };
+    if field("type") != Some("queued_command") || field("commandMode") != Some("prompt") || !human {
+        return None;
+    }
+    match attachment.get("prompt")? {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(blocks) => {
+            let parts: Vec<&str> = blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
                 .collect();
             (!parts.is_empty()).then(|| parts.join("\n"))
         }

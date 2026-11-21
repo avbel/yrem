@@ -43,6 +43,7 @@ Resolution order: command-line flags > environment > config file.
 | Token | `--token` | `YREM_TOKEN` (fallback `YANTRIKDB_TOKEN`) | `token` |
 | Token command | — | — | `token_cmd` |
 | Config file | `--config` | `YREM_CONFIG` | — |
+| [Outbox](#outbox) directory, `off` to disable | — | `YREM_OUTBOX_DIR` | — |
 
 Config file: `$XDG_CONFIG_HOME/yrem/config.toml`, default `~/.config/yrem/config.toml`. Unknown keys are rejected.
 
@@ -282,6 +283,20 @@ What emulation loses compared with a native correction:
 
 When the server implements native corrections, yrem uses them automatically.
 
+`text` is accepted for `new_text` (`--text` for `--new-text`), the field name `remember` uses.
+
+## Outbox
+
+A `remember` or `correct` that fails because the server is unavailable (a timeout, a refused connection, 503) is kept on disk instead of being lost. It answers `{"queued": true, "pending": N, "outbox": "<dir>", "warnings": [...]}`: exit code 8 on the CLI, a normal result in MCP. Nothing is stored yet at that point, so the answer has no `rid`; do not retry it.
+
+- Queued writes are sent oldest first, up to 20 and for at most 5 seconds, after the next write that reaches the server (its answer then carries `outbox_sent`, and `outbox_dropped` for writes the server refused for good) and at every session start of the [agent hooks](#agent-hooks).
+- While the outbox is on, every `remember` carries an idempotency key from its first attempt, so a write that landed before its answer timed out is stored once however often it is sent. A queued `remember` also keeps the time it was made (`created_at`).
+- A write stays queued when the server is still unavailable, rejects the token (401/403), answers with something that is not its JSON (a captive portal), or fails with 5xx, 408 or 429; sending stops there and goes on next time. It is dropped, with a note on stderr, only when the server refuses it for good: a `correct` of a rid that is gone, an invalid request.
+- `correct --cascade` whose correction landed but whose source forgets found the server gone answers `cascade_queued` with the sources, and queues only the forgets.
+- Each entry is claimed by renaming it before it is sent, so concurrent processes (the MCP server, the CLI, hooks) never send one twice; a claim left by a killed process is given back after 10 minutes.
+
+The outbox lives in `YREM_OUTBOX_DIR`, else `$XDG_STATE_HOME/yrem/outbox` (`~/.local/state/yrem/outbox`), one subdirectory per server URL (mode 0700, files 0600). `YREM_OUTBOX_DIR=off` turns it off: an unavailable server is then exit 5 as before. Reads are never queued.
+
 ## Output and exit codes
 
 Every command prints a single JSON document on stdout, and failures print `{"error", "exit_code"}` there too (config errors included, exit 1); diagnostics go to stderr. clap usage errors (exit 2, e.g. an unknown flag) are the exception: clap prints them on stderr and stdout stays empty. `yrem mcp` keeps stdout for the protocol, so its failures go to stderr only. In MCP mode, failures come back as tool results with `isError: true`.
@@ -296,6 +311,7 @@ Every command prints a single JSON document on stdout, and failures print `{"err
 | 5 | Server unavailable or timeout |
 | 6 | Partial correction: new memory written, old one not forgotten |
 | 7 | Refused: sensitive data (see [Private data protection](#private-data-protection)) |
+| 8 | `remember` or `correct` queued in the [outbox](#outbox): not stored yet, sent later |
 
 ## Private data protection
 
@@ -331,7 +347,7 @@ Detectors (hand-written, no regex):
 
 ## Agent hooks
 
-Needs yrem 0.2.1 or newer. `yrem hook <event> --harness claude|codex|plain` is what the [plugins](plugins/README.md) for Claude Code, Codex, OpenCode and pi call. It reads the harness's event JSON on stdin (`session_id`, `cwd`, `prompt`, `source`, `transcript_path`, or `turns` for harnesses without a transcript file) and prints the context to inject: hook JSON for `claude` (the whole JSON cut to 10,000 bytes) and `codex` (8,000), plain text for `plain` (10,000 bytes). It never fails a session: errors go to stderr and the exit code is 0.
+Needs yrem 0.2.1 or newer (the outbox, project-only briefings and request filtering need 0.4.0). `yrem hook <event> --harness claude|codex|plain` is what the [plugins](plugins/README.md) for Claude Code, Codex, OpenCode and pi call. It reads the harness's event JSON on stdin (`session_id`, `cwd`, `prompt`, `source`, `transcript_path`, or `turns` for harnesses without a transcript file) and prints the context to inject: hook JSON for `claude` (the whole JSON cut to 10,000 bytes) and `codex` (8,000), plain text for `plain` (10,000 bytes). It never fails a session: errors go to stderr and the exit code is 0.
 
 | Event | What it does |
 |---|---|
@@ -346,7 +362,7 @@ The project is the directory name of the git repository's main worktree, taken f
 
 The project is the namespace of the briefing's narrative, of captured lines (and of the duplicate check before them) and of the tracked session. It also drives the relevance gate and the cooldown below.
 
-The briefing's live decisions are picked client-side from `memory list` (newest first by `created_at`, which does not reinforce anything). The server's `top_decisions` is the store's all-time highest importance, the same rows in every project, so it is not used. Picked: up to `YREM_HOOK_DECISIONS` rows of the project (its namespace, or a text that names it: a project name of 5 or more characters, as a whole word not followed by `-`, so `fluidd` is in "Fluidd task #3" but not in "fluidd-bench"; a shorter name matches by namespace only), then up to 2 more rows of other namespaces from the last 7 days. Without a project, up to `YREM_HOOK_DECISIONS` rows from the last 7 days. Sensitive, superseded and auto-captured rows, merges of captured prompts and excluded namespaces are skipped, and so is a merge with a sensitive source (the next row takes its place). The narrative ("Where things stood") is the digest's head, shown only when it names a memory that passes the same checks: it is found among the listed rows or read by its rid, and dropped when it has no rid, is sensitive, superseded, excluded, or merged from something sensitive. A briefing sends the digest and the listings at the same time (the newest 100 rows, and the project's newest 50 when there is a project) and waits 8 seconds at most for all of it: a listing that fails or runs late leaves out the decisions and does not mark the server down.
+The briefing's live decisions are picked client-side from `memory list` (newest first by `created_at`, which does not reinforce anything). The server's `top_decisions` is the store's all-time highest importance, the same rows in every project, so it is not used. Picked: up to `YREM_HOOK_DECISIONS` rows of the project (its namespace, or a text that names it: a project name of 5 or more characters, as a whole word not followed by `-`, so `fluidd` is in "Fluidd task #3" but not in "fluidd-bench"; a shorter name matches by namespace only), then up to `YREM_HOOK_OTHER_PROJECTS` (default 0) rows of other namespaces from the last 7 days. A session without a project gets no briefing unless `YREM_HOOK_BRIEF_WITHOUT_PROJECT=1`, and then up to `YREM_HOOK_DECISIONS` rows from the last 7 days. Sensitive, superseded and auto-captured rows, merges of captured prompts and excluded namespaces are skipped, and so is a merge with a sensitive or auto-captured source (the next row takes its place): `think` labels every merge `source=user`, whatever it was made from. The narrative ("Where things stood") is the digest's head, shown only when it names a memory that passes the same checks: it is found among the listed rows or read by its rid, and dropped when it has no rid, is sensitive, superseded, excluded, or merged from something sensitive. A briefing sends the digest and the listings at the same time (the newest 100 rows, and the project's newest 50 when there is a project) and waits 8 seconds at most for all of it: a listing that fails or runs late leaves out the decisions and does not mark the server down.
 
 Maintenance lines (`YREM_HOOK_MAINTENANCE`): `daily` (the default) shows open conflicts at most once per 24 hours across all sessions, and takes the day's slot only when there are conflicts to show and the briefing is about to be printed; `1` shows them in every briefing, with the recall topics that came back weak (queries the secret guard or the IDE-block filter would not let through are dropped); `0` never. A value that is none of these is reported on stderr and means `daily`. Pending triggers are not shown: nothing acts on them.
 
@@ -355,7 +371,7 @@ Maintenance lines (`YREM_HOOK_MAINTENANCE`): `daily` (the default) shows open co
 - The briefing is injected once per session, however many hooks fire it, and again only after `compact` or `clear` (Claude Code; the OpenCode and pi plugins send `clear` once per process, since a resumed session lost its briefing with the old process). A hook killed before the briefing arrived does not block it: its claim is taken over after 30 seconds. The briefing tells the model not to call `session_digest`.
 - Concurrent hooks claim each memory, the tracked session and each captured line with an atomic file create, so parallel hooks split the work instead of repeating it.
 - A memory already shown in the session (in the briefing or an earlier recall) is not repeated. A memory shown in a project is not shown there again for 24 hours, in any session, unless it matches with cosine 0.65 or more.
-- Capture sends each user line at most once per session (watermark shared by `pre-compact` and `session-end`), skips lines already stored (semantic similarity ≥ 0.92, checked in the project namespace without reinforcing), and closes the session without a summary so the server does not draft the same text again. It takes the newest lines first, up to 6,000 characters within 45 seconds; lines left out stay for the next run. Lines that look like a secret or exceed the cap are never sent.
+- Capture sends each user line at most once per session (watermark shared by `pre-compact` and `session-end`), skips lines already stored (semantic similarity ≥ 0.92, checked in the project namespace without reinforcing), and closes the session without a summary so the server does not draft the same text again. It takes the newest lines first, up to 6,000 characters within 45 seconds; lines left out stay for the next run. Lines that look like a secret or exceed the cap are never sent, and neither are lines that only ask for work: every sentence opens with a work verb (`commit and push`, `please check the logs, then deploy`), is an acknowledgement (`ok`, `go on`) or only names a task (`task 387`). Messages typed while Claude Code works are read from its `queued_command` records, without the text Claude Code wraps them in.
 - The recall query is what the user typed and nothing else: `<ide_*>…</ide_*>` blocks (the editor's selection and opened file) are cut out, tags matched whatever their case, and the query is dropped when a block never closes or when any `<ide_` / `</ide_` is left once the blocks are gone (a selection of source code that quotes a closing tag ends the block early, and what follows would be the editor's text); harness text (system reminders, task notifications, subagent hand-backs, Codex's suggestion brief, `Reply with the single word …` probes, `# Code Review Brief` briefs, command echoes, continuation notices) makes no query; the 24-character minimum counts what is left; the first 1,600 characters (to the end of the word) are scanned, and spans the [secret guard](#private-data-protection) flags are replaced by `<redacted>` before the 400-character cut. The server stores every query verbatim, so none of this reaches it. Capture applies the same cleaning to the lines it keeps.
 - `skip_reinforce` goes with every recall the hooks make. By default the server strengthens whatever a recall returns, and a prompt asks for 10 candidates and injects at most 3.
 - Sessions driven by a machine get neither briefing nor recall, no tracked server session and no `think` at the end, and nothing is captured: Claude Code with `CLAUDE_CODE_ENTRYPOINT` starting with `sdk`, and Codex `codex exec` runs and subagents (read from `session_meta` at the head of `transcript_path`).
@@ -372,14 +388,16 @@ A hit is a *project hit* when its namespace is the project or its text names the
 - Project hits come first. At most `YREM_HOOK_TOP_K` are injected.
 - Always dropped: auto-captured prompts and merges made of them (unless `YREM_HOOK_INJECT_CAPTURED`), sensitive and superseded rows, namespaces in `YREM_HOOK_EXCLUDE_NAMESPACES`, scores below 0.10.
 
-The numbers come from replaying real prompts against a real store (see `src/hook/gate.rs`). Capture reads user turns only: assistant turns are the model's own claims, and storing them turns a guess into a remembered fact. Harness bookkeeping (system reminders, command echoes, pasted blocks, continuation notices, `AGENTS.md`, Codex blocks not typed by the user) is skipped, and so are SDK-driven Claude Code sessions, `codex exec` runs and Codex subagents. Injected memory text has `<` and `>` replaced, so a stored memory cannot open or close a tag in the context.
+The numbers come from replaying real prompts against a real store (see `src/hook/gate.rs`). Capture reads user turns only: assistant turns are the model's own claims, and storing them turns a guess into a remembered fact. Harness bookkeeping (system reminders, command echoes, pasted blocks, continuation notices, `AGENTS.md`, Codex blocks not typed by the user, Claude Code's copies of API requests, which carry skill bodies and tool results under the user role) is skipped, and so are SDK-driven Claude Code sessions, `codex exec` runs and Codex subagents. Injected memory text has `<` and `>` replaced, so a stored memory cannot open or close a tag in the context.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `YREM_HOOK_NAMESPACE` | — | An explicit namespace: the project, and a filter for recall. Unset: the project comes from `cwd`. |
 | `YREM_HOOK_NAMESPACE_ALIASES` | — | `old=new,old2=new2`: directory name of a renamed repository to its project name, e.g. `bw-lite-desktop=vaultkeeper`. |
 | `YREM_HOOK_DIGEST` | `1` | Inject the briefing. |
-| `YREM_HOOK_DECISIONS` | `5` | Live decisions of the project in the briefing (plus up to 2 recent ones from elsewhere); `0` skips the listing. |
+| `YREM_HOOK_DECISIONS` | `5` | Live decisions of the project in the briefing; `0` skips the listing. |
+| `YREM_HOOK_OTHER_PROJECTS` | `0` | Recent rows of other namespaces added to the project's decisions. |
+| `YREM_HOOK_BRIEF_WITHOUT_PROJECT` | `0` | Brief sessions outside a git repository, with the store's recent rows. |
 | `YREM_HOOK_MAINTENANCE` | `daily` | `0`, `1` or `daily`: open conflicts (and, with `1`, known gaps) in every briefing, at most once per 24 hours across sessions, or never. Anything else is reported on stderr and means `daily`. |
 | `YREM_HOOK_RECALL` | `1` | Recall on each prompt. |
 | `YREM_HOOK_TOP_K` | `3` | Hits injected per prompt. |

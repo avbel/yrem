@@ -14,15 +14,16 @@ mod support;
 use serde_json::{Map, Value, json};
 use support::fake_server::{FakeServer, Step, TOKEN};
 use yrem::Error;
-use yrem::client::Client;
+use yrem::client::{Client, RememberRequest};
 use yrem::config::{Config, Origin};
 use yrem::ops::{
     App, ConflictDismissArgs, ConflictListArgs, ConflictResolveArgs, CorrectArgs, ForgetArgs,
     GraphEdgesArgs, GraphRelateArgs, MemoryCurrentArgs, MemoryGapsArgs, MemoryGetArgs, MemoryInput,
-    MemoryListArgs, MemoryStatsArgs, MemoryType, Order, RecallArgs, RememberArgs,
+    MemoryListArgs, MemoryStatsArgs, MemoryType, Order, Outbox, RecallArgs, RememberArgs,
     SessionCaptureArgs, SessionDigestArgs, SessionEndArgs, SessionStartArgs, Strategy, TOOLS,
     ThinkArgs,
 };
+use yrem::ops::{FLUSH_BUDGET, Flushed, OutboxEntry};
 
 const OLD_RID: &str = "01a18e8a-aa4d-786a-a95e-2944a7bb906a";
 const NEW_RID: &str = "01a18d90-0000-7000-8000-000000000001";
@@ -3481,4 +3482,260 @@ async fn an_emulated_correction_is_not_a_merge() {
         md["evidence_ids"], "kept on request",
         "the caller's own merge wins"
     );
+}
+
+// ---------------------------------------------------------------- correct `text`, outbox
+
+#[tokio::test(flavor = "current_thread")]
+async fn correct_takes_text_for_new_text() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/correct")
+            .body(|b| b["new_text"] == "Payments use PostgreSQL 18")
+            .json(json!({"rid": "r2"})),
+    ]);
+    let args = json!({"rid": "r1", "reason": "upgraded", "text": "Payments use PostgreSQL 18"});
+    app(&srv).call("correct", args).await.unwrap();
+    srv.assert_done();
+}
+
+fn outbox(name: &str) -> Outbox {
+    let dir = std::env::temp_dir().join(format!("yrem-outbox-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    Outbox::new(dir)
+}
+
+fn remember(text: &str) -> RememberArgs {
+    RememberArgs {
+        text: Some(s(text)),
+        ..RememberArgs::default()
+    }
+}
+
+fn keyed(b: &Value) -> bool {
+    b["idempotency_key"]
+        .as_str()
+        .is_some_and(|k| k.starts_with("yrem-"))
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn writes_the_server_cannot_take_are_queued_and_sent_after_the_next_write() {
+    let no_hits = || Step::post("/v1/recall").json(json!({"results": []}));
+    let first_key = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let (k1, k2) = (first_key.clone(), first_key.clone());
+    let srv = FakeServer::start(vec![
+        no_hits(),
+        Step::post("/v1/remember")
+            .body(move |b| {
+                *k1.lock().unwrap() = b["idempotency_key"].as_str().unwrap_or("").to_owned();
+                keyed(b)
+            })
+            .status(503)
+            .raw("busy"),
+        Step::post("/v1/correct").status(503).raw("busy"),
+        no_hits(),
+        Step::post("/v1/remember")
+            .body(|b| b["text"] == "Carol is on call this week")
+            .json(json!({"rid": "b"})),
+        // Sent again with the key of the first attempt, and no recall of its text first.
+        Step::post("/v1/remember")
+            .body(move |b| {
+                b["text"] == "Releases ship on Tuesdays"
+                    && b["idempotency_key"] == *k2.lock().unwrap()
+                    && b["created_at"].as_f64().is_some()
+            })
+            .json(json!({"rid": "a"})),
+        // The queued correct was applied elsewhere meanwhile: refused for good, dropped.
+        Step::post("/v1/correct")
+            .status(404)
+            .json(json!({"error": "not found"})),
+    ]);
+    let queue = outbox("flow");
+    let app = app(&srv).with_outbox(Some(queue.clone()));
+
+    let out = app
+        .remember(remember("Releases ship on Tuesdays"))
+        .await
+        .unwrap();
+    assert_eq!(out["queued"], true, "{out}");
+    assert_eq!(out["pending"], 1);
+    let fix = CorrectArgs {
+        rid: s("r1"),
+        reason: s("moved"),
+        new_text: Some(s("Releases ship on Wednesdays")),
+        ..CorrectArgs::default()
+    };
+    assert_eq!(app.correct(fix).await.unwrap()["pending"], 2);
+
+    let out = app
+        .remember(remember("Carol is on call this week"))
+        .await
+        .unwrap();
+    assert_eq!(out["rid"], "b");
+    assert_eq!(out["outbox_sent"], 1, "{out}");
+    assert_eq!(out["outbox_dropped"], 1, "{out}");
+    assert!(queue.is_empty());
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn queued_writes_survive_a_rejected_token_and_a_foreign_answer() {
+    let queue = outbox("keep");
+    queue
+        .push(&OutboxEntry::Remember {
+            request: RememberRequest {
+                text: s("Releases ship on Tuesdays"),
+                ..RememberRequest::default()
+            },
+        })
+        .unwrap();
+    for refusal in [
+        Step::post("/v1/remember")
+            .status(401)
+            .json(json!({"error": "bad token"})),
+        Step::post("/v1/remember")
+            .status(200)
+            .raw("<html>captive portal</html>"),
+        Step::post("/v1/remember").status(500).raw("boom"),
+    ] {
+        let srv = FakeServer::start(vec![refusal]);
+        let app = app(&srv).with_outbox(Some(queue.clone()));
+        assert_eq!(app.flush_outbox(FLUSH_BUDGET).await, Flushed::default());
+        assert_eq!(queue.len(), 1, "kept for a later run");
+        srv.assert_done();
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_cascade_cut_short_after_the_correction_queues_the_forgets() {
+    let srv = FakeServer::start(vec![
+        memory("m", json!({"consolidated_from": ["a", "b"]})),
+        memory("a", json!({})),
+        memory("b", json!({})),
+        Step::post("/v1/correct").json(json!({"rid": "m2"})),
+        Step::post("/v1/forget").status(503).raw("busy"),
+    ]);
+    let queue = outbox("cascade");
+    let args = CorrectArgs {
+        rid: s("m"),
+        reason: s("redacted"),
+        new_text: Some(s("Clean text")),
+        cascade: true,
+        ..CorrectArgs::default()
+    };
+    let out = app(&srv)
+        .with_outbox(Some(queue.clone()))
+        .correct(args)
+        .await
+        .unwrap();
+    assert_eq!(out["cascade_queued"], json!(["a", "b"]), "{out}");
+    let ops: Vec<String> = queue
+        .pending()
+        .into_iter()
+        .map(|(_, e)| match e {
+            OutboxEntry::Forget { args } => args.rid,
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        ops,
+        ["a", "b"],
+        "the correction itself is never queued again"
+    );
+    srv.assert_done();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_queued_batch_keeps_a_key_per_memory() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/remember/batch")
+            .body(|b| b["memories"].as_array().unwrap().iter().all(keyed))
+            .status(503)
+            .raw("busy"),
+    ]);
+    let queue = outbox("batch");
+    let args = RememberArgs {
+        memories: Some(vec![
+            MemoryInput {
+                text: s("Releases ship on Tuesdays"),
+                ..MemoryInput::default()
+            },
+            MemoryInput {
+                text: s("Carol is on call this week"),
+                ..MemoryInput::default()
+            },
+        ]),
+        ..RememberArgs::default()
+    };
+    let out = app(&srv)
+        .with_outbox(Some(queue.clone()))
+        .remember(args)
+        .await
+        .unwrap();
+    assert_eq!(out["pending"], 2, "{out}");
+    srv.assert_done();
+}
+
+#[test]
+fn an_entry_is_claimed_by_one_process_and_kept_private() {
+    let queue = outbox("claim");
+    let path = queue
+        .push(&OutboxEntry::Remember {
+            request: RememberRequest {
+                text: s("Releases ship on Tuesdays"),
+                ..RememberRequest::default()
+            },
+        })
+        .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&path), 0o600);
+        assert_eq!(mode(queue.dir()), 0o700);
+    }
+    let claim = Outbox::claim(&path).unwrap();
+    assert!(Outbox::claim(&path).is_none(), "already taken");
+    assert!(queue.pending().is_empty(), "a claimed entry is not pending");
+    Outbox::release(claim);
+    assert_eq!(queue.pending().len(), 1);
+}
+
+#[test]
+fn the_outbox_location_follows_the_environment() {
+    let env = |pairs: &'static [(&'static str, &'static str)]| {
+        move |k: &str| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_owned())
+        }
+    };
+    assert!(Outbox::from_env(&env(&[("YREM_OUTBOX_DIR", "off")]), "http://a").is_none());
+    assert!(Outbox::from_env(&env(&[("YREM_OUTBOX_DIR", "0")]), "http://a").is_none());
+    let state = Outbox::from_env(&env(&[("XDG_STATE_HOME", "/s")]), "http://a").unwrap();
+    assert!(
+        state.dir().starts_with("/s/yrem/outbox"),
+        "{:?}",
+        state.dir()
+    );
+    let home = Outbox::from_env(&env(&[("HOME", "/h")]), "http://a").unwrap();
+    assert!(home.dir().starts_with("/h/.local/state/yrem/outbox"));
+    let other = Outbox::from_env(&env(&[("HOME", "/h")]), "http://b").unwrap();
+    assert_ne!(home.dir(), other.dir(), "one directory per server");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn without_an_outbox_an_unavailable_server_is_an_error() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall").json(json!({"results": []})),
+        Step::post("/v1/remember")
+            .body(|b| b.get("idempotency_key").is_none())
+            .status(503)
+            .raw("busy"),
+    ]);
+    let err = app(&srv)
+        .remember(remember("Releases ship on Tuesdays"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Unavailable(_)), "{err:?}");
 }

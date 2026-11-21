@@ -32,13 +32,18 @@ impl Env {
     fn new(url: &str, name: &str) -> Self {
         let dir = std::env::temp_dir().join(format!("yrem-hook-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        // Most briefing tests run without a project and show rows of other projects; both are
+        // off by default and have tests of their own.
         Self {
-            dir,
             url: url.to_owned(),
             vars: vec![
                 ("YREM_HOOK_TRACK_SESSION", "0".into()),
                 ("YREM_HOOK_THINK", "0".into()),
+                ("YREM_HOOK_BRIEF_WITHOUT_PROJECT", "1".into()),
+                ("YREM_HOOK_OTHER_PROJECTS", "2".into()),
+                ("YREM_OUTBOX_DIR", dir.join("outbox").display().to_string()),
             ],
+            dir,
         }
     }
 
@@ -584,6 +589,55 @@ fn capture_reads_codex_rollouts_and_plain_turns() {
 }
 
 #[test]
+fn capture_skips_request_copies_and_reads_queued_messages() {
+    let srv = FakeServer::start(vec![
+        Step::post("/v1/recall")
+            .body(|b| b["query"] == "We must not expose the X-Powered-By header.")
+            .json(recall(&[])),
+        Step::post("/v1/recall")
+            .body(|b| b["query"] == "Releases ship on Tuesdays.")
+            .json(recall(&[])),
+        Step::post("/v1/session/end")
+            .body(|b| {
+                b["summary"]
+                    == "Releases ship on Tuesdays.\nWe must not expose the X-Powered-By header.\n"
+            })
+            .json(json!({})),
+    ]);
+    let env = Env::new(&srv.url, "blob").set("YREM_HOOK_CAPTURE", "1");
+    let queued = |prompt: &str, mode: &str, kind: &str| {
+        json!({"type": "attachment", "attachment": {"type": "queued_command", "prompt": prompt,
+               "commandMode": mode, "origin": {"kind": kind}}})
+    };
+    let path = write_transcript(
+        &env.dir,
+        &[
+            json!({"type": "user", "message": {"role": "user", "content": "Releases ship on Tuesdays"}}),
+            // A copy of an API request: what it carries is in the transcript already, or was
+            // never the user's (skill bodies, tool results).
+            json!({"type": "api-request-blob", "message": {"role": "user", "content": [
+                {"type": "text", "text": "The staging database lives on the NAS"},
+            ]}}),
+            json!({"type": "user", "message": {"role": "user", "content": "commit and push"}}),
+            queued(
+                "We must not expose the X-Powered-By header",
+                "prompt",
+                "human",
+            ),
+            queued(
+                "The job notes are kept in Notion",
+                "task-notification",
+                "human",
+            ),
+            queued("The job notes are kept in Confluence", "prompt", "task"),
+        ],
+    );
+    let ev = json!({"session_id": "c7", "transcript_path": path});
+    assert_eq!(env.hook("pre-compact", "claude", &ev), "");
+    srv.assert_done();
+}
+
+#[test]
 fn headless_transcripts_are_not_captured() {
     let srv = FakeServer::start(vec![]);
     let env = Env::new(&srv.url, "headless").set("YREM_HOOK_CAPTURE", "1");
@@ -966,6 +1020,41 @@ fn the_project_from_cwd_scopes_the_briefing() {
         json!(["n0", "n1", "p1", "p2", "x1", "x2"]),
         "every shown row counts as seen"
     );
+    srv.assert_done();
+}
+
+#[test]
+fn other_projects_stay_out_of_the_briefing_by_default() {
+    let srv = FakeServer::start_unordered(vec![
+        Step::get("/v1/session/digest?namespace=fluidd").json(json!({})),
+        Step::get(LIST_ALL).json(records(&[row("x1", "sui", "Sui notes from today", 1.0)])),
+        Step::get(&list_project("fluidd")).json(records(&[row(
+            "p1",
+            "fluidd",
+            "Fluidd valuation rule",
+            5.0,
+        )])),
+    ]);
+    let env = Env::new(&srv.url, "noothers")
+        .set("YREM_HOOK_OTHER_PROJECTS", "")
+        .set("YREM_HOOK_MAINTENANCE", "0");
+    let cwd = repo(&env, "fluidd");
+    let out = env.hook(
+        "session-start",
+        "plain",
+        &json!({"session_id": "j8", "cwd": cwd}),
+    );
+    assert!(out.contains("Fluidd valuation rule"), "{out}");
+    assert!(!out.contains("Sui"), "{out}");
+    srv.assert_done();
+}
+
+#[test]
+fn a_session_outside_a_project_gets_no_briefing_by_default() {
+    let srv = FakeServer::start(vec![]);
+    let env = Env::new(&srv.url, "noproject").set("YREM_HOOK_BRIEF_WITHOUT_PROJECT", "");
+    let ev = json!({"session_id": "j9", "cwd": env.dir.join("loose")});
+    assert_eq!(env.hook("session-start", "claude", &ev), "");
     srv.assert_done();
 }
 
@@ -1838,6 +1927,33 @@ fn only_the_rows_about_to_be_injected_are_checked() {
         out.contains("First fact") && !out.contains("Unchecked"),
         "{out}"
     );
+    srv.assert_done();
+}
+
+#[test]
+fn a_decision_merged_from_captured_prompts_is_replaced_by_the_next_row() {
+    let mut merge = row(
+        "m",
+        "default",
+        &format!("Captured merge. {}", "Merged note. ".repeat(60)),
+        1.0,
+    );
+    merge["metadata"] = json!({"consolidated_from": ["c1"]});
+    let srv = FakeServer::start_unordered(vec![
+        Step::get("/v1/session/digest").json(json!({})),
+        Step::get(LIST_ALL).json(records(&[
+            merge,
+            row("d2", "default", "Older clean decision", 2.0),
+        ])),
+        Step::get("/v1/memory/c1").json(json!({"rid": "c1", "text": "go on",
+            "source": "session_auto_capture", "metadata_json": {}})),
+    ]);
+    let env = Env::new(&srv.url, "lineage-cap")
+        .set("YREM_HOOK_MAINTENANCE", "0")
+        .set("YREM_HOOK_DECISIONS", "1");
+    let out = env.hook("session-start", "plain", &json!({"session_id": "l10"}));
+    assert!(out.contains("Older clean decision"), "{out}");
+    assert!(!out.contains("Captured merge"), "{out}");
     srv.assert_done();
 }
 

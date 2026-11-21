@@ -42,9 +42,15 @@ function textOf(content: unknown): string {
     return "";
   }
   return content
-    .map((block) => (block?.type === "text" && typeof block.text === "string" ? block.text : ""))
+    .map((block) => (isTypedText(block) ? block.text : ""))
     .filter(Boolean)
     .join("\n");
+}
+
+// OpenCode marks text it adds to a user message itself (file contents, reminders) as synthetic,
+// and text left out of the model request as ignored; neither was typed by the user.
+function isTypedText(block: any): boolean {
+  return block?.type === "text" && typeof block.text === "string" && block.synthetic !== true && block.ignored !== true;
 }
 
 function turnsOf(messages: readonly Message[]): Turn[] {

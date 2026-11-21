@@ -19,10 +19,10 @@ use crate::mcp::Server;
 use crate::ops::{
     App, ClaimAddArgs, ClaimListArgs, ConflictDismissArgs, ConflictListArgs, ConflictResolveArgs,
     CorrectArgs, ForgetArgs, GraphEdgesArgs, GraphRelateArgs, MemoryCurrentArgs, MemoryGapsArgs,
-    MemoryGetArgs, MemoryListArgs, MemoryStatsArgs, ProcedureSurfaceArgs, RecallArgs, RememberArgs,
-    SessionCaptureArgs, SessionDigestArgs, SessionEndArgs, SessionStartArgs, TaskListArgs,
-    TemporalAsOfArgs, TemporalListArgs, ThinkArgs, TriggerActionArgs, TriggerHistoryArgs,
-    TriggerListArgs,
+    MemoryGetArgs, MemoryListArgs, MemoryStatsArgs, Outbox, ProcedureSurfaceArgs, RecallArgs,
+    RememberArgs, SessionCaptureArgs, SessionDigestArgs, SessionEndArgs, SessionStartArgs,
+    TaskListArgs, TemporalAsOfArgs, TemporalListArgs, ThinkArgs, TriggerActionArgs,
+    TriggerHistoryArgs, TriggerListArgs,
 };
 use crate::output::{self, Format};
 
@@ -42,6 +42,11 @@ and token_cmd. token_cmd is a shell command whose stdout is the token, used when
 is set elsewhere. One token grants access to one database; a namespace is only a row-level \
 tag inside it.
 
+OUTBOX
+  A remember or correct that finds the server unavailable is kept in YREM_OUTBOX_DIR \
+(default $XDG_STATE_HOME/yrem/outbox, ~/.local/state/yrem/outbox; off turns it off) and \
+exits 8; queued writes are sent after the next successful write and at hook session start.
+
 TIME ARGUMENTS
   --since, --until, --at, --valid-from, --valid-to and --created-at accept RFC 3339 with an \
 offset (2026-10-01T09:00:00+02:00), a date (2026-10-01, midnight UTC), unix seconds, or a \
@@ -56,7 +61,13 @@ EXIT CODES
   5  server unavailable or timed out
   6  correct wrote the new memory but could not forget the old one; retry `yrem forget <old_rid>`
   7  refused: the data looks like a secret. Redact it and retry, or pass --force if it is \
-not a secret";
+not a secret
+  8  remember or correct queued: the server is unavailable, the write is kept in the local \
+outbox (YREM_OUTBOX_DIR) and sent after the next successful write or session start; do not \
+retry it";
+
+/// Exit code of a `remember` or `correct` kept in the outbox.
+pub const QUEUED_EXIT: u8 = 8;
 
 const TOP_EXAMPLES: &str = "\
 Examples:
@@ -436,7 +447,9 @@ async fn execute(cli: Cli, url_from_env: bool, token_from_env: bool) -> anyhow::
         output::print(&report, format);
         return Ok(ExitCode::SUCCESS);
     }
-    let app = App::new(Client::new(&config)?);
+    let client = Client::new(&config)?;
+    let outbox = Outbox::from_env(&|k| std::env::var(k).ok(), client.base().as_str());
+    let app = App::new(client).with_outbox(outbox);
     let value = match cli.command {
         Command::Mcp => {
             Server::new(app).serve_stdio().await?;
@@ -497,5 +510,10 @@ async fn execute(cli: Cli, url_from_env: bool, token_from_env: bool) -> anyhow::
         Command::Doctor | Command::Hook(_) => unreachable!("handled above"),
     };
     output::print(&value, format);
+    // Not stored yet: a script that goes on after exit 0 (`&& rm notes.md`, `jq .rid`) must
+    // not take a queued write for a stored one.
+    if value.get("queued") == Some(&serde_json::Value::Bool(true)) {
+        return Ok(ExitCode::from(QUEUED_EXIT));
+    }
     Ok(ExitCode::SUCCESS)
 }

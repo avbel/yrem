@@ -2,15 +2,19 @@
 
 mod args;
 mod cascade;
+mod outbox;
 mod view;
 
 use std::collections::HashSet;
 use std::io::Read;
+use std::time::Duration;
 
 use chrono::Utc;
 use serde_json::{Map, Value, json};
+use tokio::time::{Instant, timeout_at};
 
 pub use args::*;
+pub use outbox::{Claim as OutboxClaim, Entry as OutboxEntry, Outbox};
 
 use crate::client::{
     AsOfRequest, CaptureRequest, ClaimRequest, ClaimsQuery, Client, ConflictsQuery, CorrectRequest,
@@ -93,16 +97,39 @@ fn without_values(msg: &str) -> String {
     out
 }
 
+/// Queued writes sent after one successful write; the rest wait for the next.
+const FLUSH_MAX: usize = 20;
+/// What sending queued writes may add to the answer of a write or to a session start.
+pub const FLUSH_BUDGET: Duration = Duration::from_secs(5);
+
+/// What one flush of the outbox did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Flushed {
+    pub sent: usize,
+    /// Refused by the server for good and deleted.
+    pub dropped: usize,
+}
+
 /// Shared application state: one HTTP client, cloned cheaply per call.
 #[derive(Debug, Clone)]
 pub struct App {
     pub client: Client,
+    /// Where `remember` and `correct` keep writes the server could not take; `None` fails them.
+    pub outbox: Option<Outbox>,
 }
 
 impl App {
     #[must_use]
     pub fn new(client: Client) -> Self {
-        Self { client }
+        Self {
+            client,
+            outbox: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_outbox(self, outbox: Option<Outbox>) -> Self {
+        Self { outbox, ..self }
     }
 
     /// Runs an MCP tool by name with raw JSON arguments (`yrem call`).
@@ -166,8 +193,17 @@ impl App {
                 if !args.force && req.idempotency_key.is_none() && !view::is_sensitive(&req) {
                     warnings.extend(self.duplicate_warning(&req).await);
                 }
-                let written = shape(self.client.remember(&req).await?);
-                Ok(view::with_warnings(written, &warnings))
+                // With a key from the first attempt on, a write that landed before its answer
+                // timed out is not stored twice when the outbox sends it again.
+                if self.outbox.is_some() {
+                    req.idempotency_key.get_or_insert_with(Outbox::key);
+                }
+                match self.client.remember(&req).await {
+                    Ok(written) => Ok(self
+                        .after_write(view::with_warnings(shape(written), &warnings))
+                        .await),
+                    Err(e) => self.queue(e, &[OutboxEntry::Remember { request: req }]),
+                }
             }
             (None, Some(memories)) => {
                 if args.idempotency_key.is_some() {
@@ -178,15 +214,30 @@ impl App {
                 if memories.is_empty() {
                     return Err(Error::Invalid("`memories` is empty".into()));
                 }
-                let reqs = memories
+                let mut reqs = memories
                     .into_iter()
                     .map(|m| remember_request(m.or(&defaults), now))
                     .collect::<Result<Vec<_>>>()?;
                 guard("remember", args.force, &json!({ "memories": &reqs }))?;
+                if self.outbox.is_some() {
+                    for r in &mut reqs {
+                        r.idempotency_key.get_or_insert_with(Outbox::key);
+                    }
+                }
                 let texts: Vec<&str> = reqs.iter().map(|r| r.text.as_str()).collect();
                 let warnings = view::length_warnings(&texts, true);
-                let written = shape(self.client.remember_batch(&reqs).await?);
-                Ok(view::with_warnings(written, &warnings))
+                match self.client.remember_batch(&reqs).await {
+                    Ok(written) => Ok(self
+                        .after_write(view::with_warnings(shape(written), &warnings))
+                        .await),
+                    Err(e) => {
+                        let entries: Vec<OutboxEntry> = reqs
+                            .into_iter()
+                            .map(|request| OutboxEntry::Remember { request })
+                            .collect();
+                        self.queue(e, &entries)
+                    }
+                }
             }
         }
     }
@@ -321,8 +372,21 @@ impl App {
         Ok(shape(self.client.forget(&req).await?))
     }
 
-    /// Native `POST /v1/correct`; on 501, emulated as get → remember → forget.
+    /// Native `POST /v1/correct`; on 501, emulated as get → remember → forget. Queued when the
+    /// server is unavailable before anything was written.
     pub async fn correct(&self, args: CorrectArgs) -> Result<Value> {
+        match self.correct_once(args.clone()).await {
+            // The server went away during the cascade: sending now would only wait again.
+            Ok(out) if out.get("cascade_queued").is_some() => Ok(out),
+            Ok(out) => Ok(self.after_write(out).await),
+            Err(e) => self.queue(e, &[OutboxEntry::Correct { args }]),
+        }
+    }
+
+    /// One `correct`, with no outbox flush after it. When the correction landed but forgetting
+    /// the cascade's sources found the server gone, the forgets are queued (forgetting is
+    /// idempotent), so a replay never corrects twice.
+    async fn correct_once(&self, args: CorrectArgs) -> Result<Value> {
         let rid = non_empty("rid", args.rid)?;
         let reason = non_empty("reason", args.reason)?;
         if let Some(t) = &args.new_text
@@ -365,12 +429,127 @@ impl App {
             Err(e) => return Err(e),
         };
         if args.cascade {
-            self.forget_sources(&sources, Some(reason)).await?;
+            let key = match self.forget_sources(&sources, Some(reason.clone())).await {
+                Ok(()) => "cascaded",
+                Err(e) => {
+                    self.queue_forgets(e, &sources, &reason)?;
+                    "cascade_queued"
+                }
+            };
             if let Value::Object(o) = &mut out {
-                o.insert("cascaded".into(), json!(sources));
+                o.insert(key.into(), json!(sources));
             }
         }
         Ok(out)
+    }
+
+    /// Queues forgetting `sources` after `err`, or returns `err` when it cannot.
+    fn queue_forgets(&self, err: Error, sources: &[String], reason: &str) -> Result<()> {
+        let (Error::Unavailable(_), Some(outbox)) = (&err, &self.outbox) else {
+            return Err(err);
+        };
+        let entries: Vec<OutboxEntry> = sources
+            .iter()
+            .map(|rid| OutboxEntry::Forget {
+                args: ForgetArgs {
+                    rid: rid.clone(),
+                    reason: Some(reason.to_owned()),
+                    ..ForgetArgs::default()
+                },
+            })
+            .collect();
+        outbox.push_all(&entries).map_err(|e| {
+            eprintln!(
+                "yrem: cannot queue the write in {}: {e}",
+                outbox.dir().display()
+            );
+            err
+        })
+    }
+
+    /// Keeps `entries` in the outbox when `err` says the server is unavailable; any other
+    /// error, or no outbox, is returned as it is.
+    fn queue(&self, err: Error, entries: &[OutboxEntry]) -> Result<Value> {
+        let (Error::Unavailable(why), Some(outbox)) = (&err, &self.outbox) else {
+            return Err(err);
+        };
+        if let Err(e) = outbox.push_all(entries) {
+            eprintln!(
+                "yrem: cannot queue the write in {}: {e}",
+                outbox.dir().display()
+            );
+            return Err(err);
+        }
+        Ok(json!({
+            "queued": true,
+            "pending": outbox.len(),
+            "outbox": outbox.dir(),
+            "warnings": [format!(
+                "server unavailable ({why}): nothing is stored yet; the write is kept in the \
+                 local outbox and sent after the next successful write or session start"
+            )],
+        }))
+    }
+
+    /// `out` of a write that reached the server, which is up now: queued writes follow it.
+    async fn after_write(&self, mut out: Value) -> Value {
+        let done = self.flush_outbox(FLUSH_BUDGET).await;
+        if let Value::Object(o) = &mut out {
+            if done.sent > 0 {
+                o.insert("outbox_sent".into(), done.sent.into());
+            }
+            if done.dropped > 0 {
+                o.insert("outbox_dropped".into(), done.dropped.into());
+            }
+        }
+        out
+    }
+
+    /// Sends up to [`FLUSH_MAX`] queued writes, oldest first, within `budget`. Each entry is
+    /// claimed first, so concurrent flushes split the work. It stops at the first write the
+    /// server cannot take yet (unavailable, a token it rejects, an answer that is not its
+    /// JSON) and keeps it; a write the server refuses for good (a rid already corrected, an
+    /// invalid request) is deleted with a note on stderr.
+    pub async fn flush_outbox(&self, budget: Duration) -> Flushed {
+        let mut done = Flushed::default();
+        let Some(outbox) = &self.outbox else {
+            return done;
+        };
+        let deadline = Instant::now() + budget;
+        for (path, entry) in outbox.pending().into_iter().take(FLUSH_MAX) {
+            if Instant::now() >= deadline {
+                break;
+            }
+            let Some(claim) = Outbox::claim(&path) else {
+                continue;
+            };
+            match timeout_at(deadline, self.replay(entry)).await {
+                Ok(Ok(())) => {
+                    Outbox::finish(claim);
+                    done.sent += 1;
+                }
+                Ok(Err(e)) if !worth_keeping(&e) => {
+                    eprintln!("yrem: dropped a queued write the server refused: {e}");
+                    Outbox::finish(claim);
+                    done.dropped += 1;
+                }
+                Ok(Err(_)) | Err(_) => {
+                    Outbox::release(claim);
+                    break;
+                }
+            }
+        }
+        done
+    }
+
+    /// A queued write, sent once more. A `remember` carries the idempotency key it was first
+    /// sent with, so the server stores it once however often it arrives.
+    async fn replay(&self, entry: OutboxEntry) -> Result<()> {
+        match entry {
+            OutboxEntry::Remember { request } => self.client.remember(&request).await.map(drop),
+            OutboxEntry::Correct { args } => self.correct_once(args).await.map(drop),
+            OutboxEntry::Forget { args } => self.forget(args).await.map(drop),
+        }
     }
 
     async fn correct_emulated(&self, req: CorrectRequest) -> Result<Value> {
@@ -720,6 +899,24 @@ fn temporal_query(args: TemporalListArgs) -> TemporalQuery {
         days: args.days,
         limit: args.limit,
         namespace: args.namespace,
+    }
+}
+
+/// Whether a queued write that failed with `e` may succeed later. Every variant is listed, so
+/// a new one needs a decision.
+fn worth_keeping(e: &Error) -> bool {
+    match e {
+        Error::Unavailable(_)
+        | Error::Transport(_)
+        | Error::Quota(_)
+        | Error::Auth { .. }
+        | Error::Decode(_)
+        | Error::Unsupported { .. } => true,
+        Error::Http { status, .. } => *status >= 500 || matches!(status, 408 | 429),
+        Error::NotFound(_)
+        | Error::Invalid(_)
+        | Error::Sensitive { .. }
+        | Error::PartialCorrect { .. } => false,
     }
 }
 
