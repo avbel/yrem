@@ -1,4 +1,4 @@
-//! User turns from a Claude Code or Codex transcript (JSONL), cleaned for capture.
+//! User turns from a Claude Code, Codex or Antigravity transcript (JSONL), cleaned for capture.
 //!
 //! Neither transcript format is a stable contract: unknown shapes yield fewer turns, never
 //! an error. Only user turns are read. Assistant turns are the model's own claims, and
@@ -175,7 +175,12 @@ const META_SPANS: &[&str] = &[
     "local-command-stdout",
     "local-command-caveat",
     "pasted_content",
+    // Antigravity appends these to the user's request: the local time, a model switch.
+    "ADDITIONAL_METADATA",
+    "USER_SETTINGS_CHANGE",
 ];
+/// Antigravity wraps what the user typed in this tag, followed by its own metadata spans.
+const USER_REQUEST: (&str, &str) = ("<USER_REQUEST>", "</USER_REQUEST>");
 
 /// Cleaned user lines, oldest first, from the transcript at `path`.
 #[must_use]
@@ -231,7 +236,7 @@ pub fn strip_harness(text: &str) -> Option<String> {
 
 /// [`strip_harness`] with line breaks kept: a line break ends a sentence.
 fn strip_lines(text: &str) -> Option<String> {
-    let text = strip_ide_blocks(text)?;
+    let text = strip_ide_blocks(user_request(text))?;
     if is_meta(&text) {
         return None;
     }
@@ -240,6 +245,14 @@ fn strip_lines(text: &str) -> Option<String> {
         out = strip_spans(&out, tag);
     }
     Some(unwrap_queued(&out))
+}
+
+/// The body of Antigravity's `<USER_REQUEST>` wrapper; `text` as is when it has none.
+fn user_request(text: &str) -> &str {
+    let (open, close) = USER_REQUEST;
+    text.split_once(open)
+        .and_then(|(_, rest)| rest.split_once(close))
+        .map_or(text, |(body, _)| body)
 }
 
 fn collapse(text: &str) -> String {
@@ -410,6 +423,17 @@ fn user_text(record: &Value) -> Option<String> {
         // request, skill bodies and tool results included.
         Some("user") => record.get("message")?,
         Some("attachment") => return queued_prompt(record.get("attachment")?),
+        // Antigravity: {"type":"USER_INPUT","source":"USER_EXPLICIT","content":"<USER_REQUEST>…"}.
+        // Hook injections are `SYSTEM_MESSAGE` records and never match.
+        Some("USER_INPUT") => {
+            let typed = record
+                .get("source")
+                .and_then(Value::as_str)
+                .is_none_or(|s| s.starts_with("USER"));
+            return typed
+                .then(|| record.get("content")?.as_str().map(str::to_owned))
+                .flatten();
+        }
         _ => return None,
     };
     if msg.get("role").and_then(Value::as_str) != Some("user") {

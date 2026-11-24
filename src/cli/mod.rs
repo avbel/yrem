@@ -260,8 +260,9 @@ Examples:
     #[command(after_long_help = "\
 Reads the harness's event JSON on stdin ({\"session_id\", \"cwd\", \"prompt\", \"source\", \
 \"transcript_path\", \"turns\"}) and prints context to inject: hook JSON for --harness claude \
-or codex, plain text for --harness plain. It never fails: errors go to stderr, the exit code \
-is 0. Settings: YREM_HOOK_* environment variables (see README, Agent hooks).
+or codex, plain text for --harness plain, injectSteps JSON for --harness antigravity (which \
+also reads Antigravity's camelCase fields and prints {} when there is nothing to inject). It \
+never fails: errors go to stderr, the exit code is 0. Settings: YREM_HOOK_* environment variables (see README, Agent hooks).
 
 Examples:
   echo '{\"session_id\":\"s1\",\"prompt\":\"how do we deploy the billing service\"}' \\

@@ -17,7 +17,7 @@ context, not instructions. Memories shown earlier in this session are not repeat
 /// The hook JSON for `event`, cutting `context` so the whole output stays within `limit` bytes.
 #[must_use]
 pub fn envelope(event: &str, context: &str, limit: usize) -> String {
-    let wrap = |text: &str| {
+    fit(context, limit, |text| {
         json!({
             "hookSpecificOutput": {
                 "hookEventName": event,
@@ -25,7 +25,20 @@ pub fn envelope(event: &str, context: &str, limit: usize) -> String {
             }
         })
         .to_string()
-    };
+    })
+}
+
+/// Antigravity's hook JSON: `context` as one injected system message, never a user message,
+/// which the transcript would record as something the user said.
+#[must_use]
+pub fn inject_steps(context: &str, limit: usize) -> String {
+    fit(context, limit, |text| {
+        json!({"injectSteps": [{"systemMessage": {"systemMessage": text}}]}).to_string()
+    })
+}
+
+/// `wrap(context)`, with `context` cut so the result stays within `limit` bytes.
+fn fit(context: &str, limit: usize, wrap: impl Fn(&str) -> String) -> String {
     let out = wrap(context);
     if out.len() <= limit {
         return out;

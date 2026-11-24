@@ -1,0 +1,25 @@
+{
+  "yrem": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "yrem hook session-start --harness antigravity || echo '{}'",
+        "timeout": 15
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "yrem hook prompt --harness antigravity || echo '{}'",
+        "timeout": 15
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "yrem hook pre-compact --harness antigravity --detach || echo '{}'",
+        "timeout": 5
+      }
+    ]
+  }
+}

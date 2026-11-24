@@ -39,10 +39,39 @@ fn hook_manifests_only_call_yrem_hook_and_never_fail() {
     }
 }
 
+/// Antigravity's `hooks.json` names a group and lists handlers flat under each event, and it
+/// reads every hook's stdout as JSON, so a missing or older `yrem` must still print `{}`.
+#[test]
+fn antigravity_hooks_only_call_yrem_hook_and_always_answer_json() {
+    let groups = json("plugins/antigravity/hooks.json");
+    let events = groups["yrem"].as_object().unwrap();
+    let mapped: Vec<(&str, &str)> = events
+        .iter()
+        .map(|(event, handlers)| {
+            let handlers = handlers.as_array().unwrap();
+            assert_eq!(handlers.len(), 1, "{event}");
+            let cmd = handlers[0]["command"].as_str().unwrap();
+            let words: Vec<&str> = cmd.split_whitespace().collect();
+            assert_eq!(&words[..2], ["yrem", "hook"], "{cmd}");
+            assert_eq!(&words[3..5], ["--harness", "antigravity"], "{cmd}");
+            assert!(cmd.ends_with(" || echo '{}'"), "{cmd}");
+            (event.as_str(), words[2])
+        })
+        .collect();
+    assert_eq!(
+        mapped,
+        [
+            ("PreInvocation", "prompt"),
+            ("SessionStart", "session-start"),
+            ("Stop", "pre-compact"),
+        ]
+    );
+}
+
 #[test]
 fn bundled_skills_match_the_canonical_one() {
     let canonical = std::fs::read_to_string(Path::new(ROOT).join("skills/yrem/SKILL.md")).unwrap();
-    for h in ["claude", "codex", "pi"] {
+    for h in ["claude", "codex", "pi", "antigravity"] {
         let copy = std::fs::read_to_string(
             Path::new(ROOT).join(format!("plugins/{h}/skills/yrem/SKILL.md")),
         )
@@ -62,6 +91,7 @@ fn plugin_versions_match_the_crate() {
         ("plugins/codex/.codex-plugin/plugin.json", "/version"),
         ("plugins/opencode/package.json", "/version"),
         ("plugins/pi/package.json", "/version"),
+        ("plugins/antigravity/plugin.json", "/version"),
         (".claude-plugin/marketplace.json", "/plugins/0/version"),
     ] {
         assert_eq!(

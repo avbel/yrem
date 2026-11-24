@@ -1,6 +1,6 @@
 # yrem harness plugins
 
-Four minimal plugins. Each one only calls the `yrem` CLI (`yrem hook <event> --harness <h>`);
+Five minimal plugins. Each one only calls the `yrem` CLI (`yrem hook <event> --harness <h>`);
 digest rendering, the relevance gate, dedup, session state, capture and `think` all live in the
 binary. The plugins carry no server config: `yrem` reads `~/.config/yrem/config.toml` or
 `YREM_URL` / `YREM_TOKEN` itself, and `yrem` 0.2.1 or newer must be on `PATH`. With an older
@@ -13,10 +13,13 @@ plugins treat any failure as no context.
 | Codex | `codex plugin marketplace add avbel/yrem` then `codex plugin add yrem@yrem` | `SessionStart` (startup, resume, clear) | `UserPromptSubmit` | `PreCompact` | `SessionEnd` (`--detach`) |
 | OpenCode V2 | `opencode plugin add 'github:avbel/yrem#main::path:plugins/opencode'` | `context` hook, fresh user turn | `context` hook, fresh user turn | `compaction` hook | `session.deleted` event (`--detach`) |
 | pi | `pi install ./plugins/pi` (from a clone of this repo) | `session_start` | `context` | none | `session_shutdown` (`--detach`) |
+| Antigravity | `agy plugin install ./plugins/antigravity` (from a clone of this repo) | `SessionStart` | `PreInvocation`, first model call of a turn | `Stop`, every turn (`--detach`) | none |
 
 Claude Code and Codex pipe their own hook JSON to `yrem`, which understands it as is. OpenCode
 and pi build the JSON themselves (`session_id`, `cwd`, `prompt`, `turns`) and use `--harness plain`,
-where `yrem` prints the raw context text and the plugin appends it as background data.
+where `yrem` prints the raw context text and the plugin appends it as background data. Antigravity
+pipes its own camelCase hook JSON to `yrem` with `--harness antigravity`, which reads it as is and
+answers with `injectSteps` (one system message) or `{}`.
 
 Settings are `YREM_HOOK_*` environment variables, documented in
 [the main README](../README.md#agent-hooks).
@@ -57,6 +60,8 @@ Settings are `YREM_HOOK_*` environment variables, documented in
   - Codex: a `[mcp_servers.yrem]` table in `~/.codex/config.toml` with `command = "yrem"` and `args = ["mcp"]`
   - OpenCode: an `mcp` entry in `opencode.json` with `"type": "local"` and `"command": ["yrem", "mcp"]`
   - pi: `pi mcp add yrem -- yrem mcp`
+  - Antigravity: `agy mcp add yrem yrem mcp`, or a `yrem` entry with `"command": "yrem"` and
+    `"args": ["mcp"]` in `~/.gemini/config/mcp_config.json`
 
 ## Host caveats
 
@@ -72,5 +77,18 @@ Settings are `YREM_HOOK_*` environment variables, documented in
   `session_shutdown`.
 - Codex: its `SessionStart` matcher has no `compact` source, so the briefing is not re-injected
   after a Codex compaction.
-- The Claude Code, Codex and pi plugins bundle the `yrem` skill (`skills/yrem/SKILL.md`). For
+- Antigravity (`agy` 1.5.16; the hook contract is from its docs and from probes of
+  2026-11-24, an end-to-end run of this plugin is still to do): there is no session-end or
+  pre-compact event. `Stop` fires once per user turn, so capture runs there, detached; its
+  per-session watermark keeps it from storing a line twice. No tracked server session is opened
+  (nothing would close it) and `think` never runs from this plugin. `PreInvocation` fires before
+  every model call of the tool loop, and `yrem` recalls only when `invocationNum` is 0, the
+  first call of a user turn. Injected system messages stay in the conversation, which is why
+  each memory is shown once. On `--conversation` resume `SessionStart` does not fire again, so
+  a resumed conversation gets no new briefing. Hooks run in the plugin's own directory; the
+  project comes from the first of `workspacePaths`. `agy -p` runs are not detected as headless
+  and are briefed like interactive ones. Headless `agy -p` denies MCP tools unless
+  `settings.json` has `permissions.allow` with `mcp(yrem/*)`. The App started from the Dock may
+  not have `/opt/homebrew/bin` on `PATH`; then every hook answers `{}`.
+- The Claude Code, Codex, pi and Antigravity plugins bundle the `yrem` skill (`skills/yrem/SKILL.md`). For
   OpenCode, link it into `~/.config/opencode/skills/yrem`.

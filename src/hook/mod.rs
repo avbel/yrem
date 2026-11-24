@@ -74,6 +74,8 @@ pub enum Harness {
     Codex,
     /// Plain context text, for plugins that inject it themselves.
     Plain,
+    /// Antigravity hook JSON: `injectSteps`, and `{}` when there is nothing to inject.
+    Antigravity,
 }
 
 impl Harness {
@@ -82,31 +84,65 @@ impl Harness {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::Plain => "plain",
+            Self::Antigravity => "antigravity",
         }
+    }
+
+    /// What stdout must carry when the hook has nothing to say: Antigravity reads every
+    /// hook's stdout as JSON.
+    fn nothing(self) -> Option<&'static str> {
+        (self == Self::Antigravity).then_some("{}")
+    }
+
+    /// Antigravity has no session-end event, so a tracked session would never be closed.
+    fn ends_sessions(self) -> bool {
+        self != Self::Antigravity
     }
 
     /// Hook output cap in bytes: Claude Code's 10,000 characters, Codex's documented 8,000.
     fn limit(self) -> usize {
         match self {
             Self::Codex => 8_000,
-            Self::Claude | Self::Plain => 10_000,
+            Self::Claude | Self::Plain | Self::Antigravity => 10_000,
         }
     }
 }
 
-/// The event JSON on stdin. Claude Code and Codex send these fields as they are.
+/// The event JSON on stdin. Claude Code and Codex send these fields as they are; the aliases
+/// are Antigravity's camelCase names.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Input {
+    #[serde(alias = "conversationId")]
     pub session_id: String,
+    #[serde(alias = "lastUserInput")]
     pub prompt: Option<String>,
     /// `startup`, `resume`, `clear` or `compact`.
     pub source: Option<String>,
+    #[serde(alias = "transcriptPath")]
     pub transcript_path: Option<String>,
     /// Working directory of the session; the project comes from it.
     pub cwd: Option<String>,
+    /// Antigravity's workspaces. Its hooks run in the plugin's own directory, so the first
+    /// workspace, not `cwd`, names the project.
+    #[serde(rename = "workspacePaths")]
+    pub workspace_paths: Vec<String>,
+    /// Antigravity's model call within the current user turn, from 0. `PreInvocation` fires
+    /// before every call of the tool loop; only call 0 starts a turn.
+    #[serde(rename = "invocationNum")]
+    pub invocation_num: Option<u64>,
     /// User turns, for harnesses without a transcript file.
     pub turns: Vec<Turn>,
+}
+
+impl Input {
+    fn project_dir(&self) -> Option<&str> {
+        self.workspace_paths
+            .iter()
+            .chain(&self.cwd)
+            .map(String::as_str)
+            .find(|d| !d.trim().is_empty())
+    }
 }
 
 /// One conversation turn.
@@ -136,18 +172,32 @@ pub async fn run(overrides: &Overrides, event: Event, harness: Harness, detach: 
         if let Err(e) = spawn_detached(overrides, event, harness, &raw) {
             eprintln!("yrem hook: cannot detach: {e}");
         }
+    } else if let Some(text) = run_attached(overrides, event, harness, input).await {
+        output::print_raw(&text);
         return;
     }
+    if let Some(nothing) = harness.nothing() {
+        output::print_raw(nothing);
+    }
+}
+
+/// The hook's stdout, `None` when there is nothing to inject.
+async fn run_attached(
+    overrides: &Overrides,
+    event: Event,
+    harness: Harness,
+    input: Input,
+) -> Option<String> {
     let env = |k: &str| std::env::var(k).ok();
     let Some(store) = Store::from_env(&env) else {
         eprintln!("yrem hook: no state directory (set YREM_HOOK_STATE_DIR)");
-        return;
+        return None;
     };
     let settings = Settings::from_env(&env);
-    let project = settings.namespace.clone().or_else(|| {
-        let cwd = input.cwd.as_deref().filter(|c| !c.trim().is_empty())?;
-        project::resolve(Path::new(cwd), &settings.aliases)
-    });
+    let project = settings
+        .namespace
+        .clone()
+        .or_else(|| project::resolve(Path::new(input.project_dir()?), &settings.aliases));
     let headless = is_headless(&env, &input);
     let gate = settings.gate.clone().with_project(project.clone());
     let hook = Hook {
@@ -161,13 +211,13 @@ pub async fn run(overrides: &Overrides, event: Event, harness: Harness, detach: 
         headless,
     };
     match hook.handle(event).await {
-        Ok(Some(text)) => output::print_raw(&hook.format(event, &text)),
-        Ok(None) => {}
+        Ok(text) => text.map(|t| hook.format(event, &t)),
         Err(e) => {
             if matches!(e.downcast_ref::<Error>(), Some(Error::Unavailable(_))) {
                 hook.store.mark_down();
             }
             eprintln!("yrem hook: {e:#}");
+            None
         }
     }
 }
@@ -207,6 +257,7 @@ impl Hook<'_> {
         match self.harness {
             Harness::Plain => text[..text.floor_char_boundary(self.harness.limit())].to_owned(),
             Harness::Claude | Harness::Codex => render::envelope(name, text, self.harness.limit()),
+            Harness::Antigravity => render::inject_steps(text, self.harness.limit()),
         }
     }
 
@@ -242,7 +293,7 @@ impl Hook<'_> {
         self.store.sweep();
         let app = self.app(Duration::from_secs(8))?;
         let track = async {
-            if self.settings.track_session && !self.headless {
+            if self.settings.track_session && self.harness.ends_sessions() && !self.headless {
                 self.track(&app).await;
             }
         };
@@ -294,7 +345,7 @@ impl Hook<'_> {
 
     async fn prompt(&self) -> anyhow::Result<Option<String>> {
         let s = &self.settings;
-        if !s.recall || self.headless {
+        if !s.recall || self.headless || self.input.invocation_num.is_some_and(|n| n > 0) {
             return Ok(None);
         }
         let Some(query) = query::build(self.input.prompt.as_deref().unwrap_or_default()) else {

@@ -136,7 +136,18 @@ Recalled text is data, never instructions.
 
 If you wrap agents in your own sandbox (SBPL on macOS, bubblewrap/Landlock on Linux), allow egress to the server's host and port.
 
-### 5. Scripts and humans
+### 5. Antigravity — plugin + MCP
+
+The [Antigravity plugin](plugins/README.md) (CLI, App and IDE; verified on `agy` 1.5.16) runs `yrem hook` on `SessionStart` (briefing), `PreInvocation` (recall, on the first model call of each user turn only) and `Stop` (capture, detached). From a clone of this repo:
+
+```bash
+agy plugin install ./plugins/antigravity
+agy mcp add yrem yrem mcp
+```
+
+Antigravity has no session-end or pre-compact event, so the plugin never opens a tracked server session and never runs `think`; run `yrem think` yourself now and then, or let another harness do it. See the [host caveats](plugins/README.md#host-caveats).
+
+### 6. Scripts and humans
 
 ```bash
 # Store
@@ -347,7 +358,7 @@ Detectors (hand-written, no regex):
 
 ## Agent hooks
 
-Needs yrem 0.2.1 or newer (the outbox, project-only briefings and request filtering need 0.4.0). `yrem hook <event> --harness claude|codex|plain` is what the [plugins](plugins/README.md) for Claude Code, Codex, OpenCode and pi call. It reads the harness's event JSON on stdin (`session_id`, `cwd`, `prompt`, `source`, `transcript_path`, or `turns` for harnesses without a transcript file) and prints the context to inject: hook JSON for `claude` (the whole JSON cut to 10,000 bytes) and `codex` (8,000), plain text for `plain` (10,000 bytes). It never fails a session: errors go to stderr and the exit code is 0.
+Needs yrem 0.2.1 or newer (the outbox, project-only briefings and request filtering need 0.4.0, `--harness antigravity` needs 0.5.0). `yrem hook <event> --harness claude|codex|plain|antigravity` is what the [plugins](plugins/README.md) for Claude Code, Codex, OpenCode, pi and Antigravity call. It reads the harness's event JSON on stdin (`session_id`, `cwd`, `prompt`, `source`, `transcript_path`, or `turns` for harnesses without a transcript file) and prints the context to inject: hook JSON for `claude` (the whole JSON cut to 10,000 bytes) and `codex` (8,000), plain text for `plain` (10,000 bytes), and for `antigravity` one injected system message (`{"injectSteps":[{"systemMessage":{"systemMessage":…}}]}`, 10,000 bytes) or `{}` when there is nothing to inject, since Antigravity reads every hook's stdout as JSON. With `antigravity` it also reads `conversationId`, `lastUserInput`, `transcriptPath`, `workspacePaths` (the first one names the project; the hook's own `cwd` is the plugin directory) and `invocationNum` (`prompt` does nothing when it is above 0). It never fails a session: errors go to stderr and the exit code is 0.
 
 | Event | What it does |
 |---|---|
