@@ -5,6 +5,11 @@ all-features = true
 version = 2
 unmaintained = "workspace"
 yanked = "deny"
+ignore = [
+    # chrono is unmaintained, but rmcp and schemars depend on it too, so dropping it from
+    # yrem alone would not remove it. Revisit when they move off it.
+    { id = "RUSTSEC-2026-0543", reason = "transitive via rmcp and schemars; no maintained drop-in" },
+]
 
 [licenses]
 version = 2

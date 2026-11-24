@@ -1,6 +1,6 @@
 {
   "name": "yrem",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Memory hooks for Codex: every hook calls the yrem CLI, which holds all the logic.",
   "author": {
     "name": "Andrey Belchikov",
