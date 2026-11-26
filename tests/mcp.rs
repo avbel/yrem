@@ -564,3 +564,65 @@ async fn secret_guard_refuses_and_force_overrides() {
     srv.assert_done();
     c.cancel().await.unwrap();
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn serves_the_yrem_skill_over_the_skills_extension() {
+    use rmcp::model::{
+        GetSkillRequestParams, ReadResourceRequestParams, ResourceContents, SkillResources,
+    };
+
+    let skill_md = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("skills/yrem/SKILL.md"),
+    )
+    .unwrap();
+    let uri = "skill://yrem/SKILL.md";
+    let srv = FakeServer::start(vec![]);
+    let c = client(&srv.url).await;
+    let caps = &c.peer_info().unwrap().capabilities;
+    assert!(caps.supports_skills() && caps.resources.is_some());
+
+    let skills = c.list_all_skills().await.unwrap();
+    assert_eq!(skills.len(), 1);
+    let skill = &skills[0];
+    assert_eq!(skill.uri, uri);
+    assert_eq!(skill.frontmatter.name, "yrem");
+    assert!(
+        skill
+            .frontmatter
+            .description
+            .starts_with("Persistent memory")
+    );
+    let SkillResources::Files(files) = &skill.resources else {
+        panic!("expected a file manifest")
+    };
+    assert_eq!(files.len(), 1);
+    files[0].verify(skill_md.as_bytes()).unwrap();
+
+    let got = c.get_skill(GetSkillRequestParams::new(uri)).await.unwrap();
+    assert_eq!(&got.skill, skill);
+    assert!(
+        c.get_skill(GetSkillRequestParams::new("skill://other/SKILL.md"))
+            .await
+            .is_err()
+    );
+
+    let resources = c.list_all_resources().await.unwrap();
+    assert_eq!(resources.len(), 1);
+    assert_eq!(resources[0].uri, uri);
+    assert_eq!(resources[0].size, Some(skill_md.len() as u64));
+
+    let read = c
+        .read_resource(ReadResourceRequestParams::new(uri))
+        .await
+        .unwrap();
+    let [ResourceContents::TextResourceContents { text, .. }] = read.contents.as_slice() else {
+        panic!("expected one text resource")
+    };
+    assert_eq!(text, &skill_md);
+    assert!(
+        c.read_resource(ReadResourceRequestParams::new("skill://yrem/other.md"))
+            .await
+            .is_err()
+    );
+    c.cancel().await.unwrap();
+}

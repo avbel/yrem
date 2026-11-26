@@ -91,6 +91,8 @@ claude mcp add --scope user yrem -- yrem mcp
 
 Claude Code receives the tools and the memory instructions. The agent calls `session_digest` at the start, `remember` / `correct` while working, and `think` after substantial work.
 
+`yrem mcp` also serves the [yrem skill](skills/yrem/SKILL.md) through the MCP Skills extension (SEP-2640) at `skill://yrem/SKILL.md`, so clients that load skills from MCP servers get it without installing it. Clients without the extension ignore it; install the skill from this repo or a plugin instead.
+
 ### 3. Claude Code — plugin + skill (fewest tokens)
 
 The [Claude Code plugin](plugins/README.md) runs `yrem hook` on `SessionStart`, `UserPromptSubmit`, `PreCompact` and `SessionEnd`: the briefing and relevant memories reach the context without relying on the model to ask for them. See [Agent hooks](#agent-hooks).
