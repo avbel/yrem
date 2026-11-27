@@ -18,13 +18,14 @@ use serde_json::Value;
 pub use schema::{compact, compact_schema};
 
 use crate::error::Result;
+use crate::harness;
 use crate::ops::{
     App, ConflictListArgs, ConflictResolveArgs, CorrectArgs, ForgetArgs, GraphRelateArgs,
     MemoryCurrentArgs, MemoryGetArgs, RecallArgs, RememberArgs, SessionCaptureArgs,
     SessionDigestArgs, ThinkArgs,
 };
 
-/// MCP server instructions (~145 tokens).
+/// MCP server instructions (~170 tokens).
 pub const INSTRUCTIONS: &str = include_str!("instructions.md");
 
 type ToolResult = std::result::Result<CallToolResult, ErrorData>;
@@ -39,6 +40,13 @@ impl Server {
     #[must_use]
     pub fn new(app: App) -> Self {
         Self { app: Arc::new(app) }
+    }
+
+    /// The app a write goes through: it stamps the harness the connected client belongs to.
+    fn writer(&self, ctx: &RequestContext<RoleServer>) -> App {
+        let client = ctx.peer.peer_info().map(|i| i.client_info.name.clone());
+        let harness = harness::for_mcp(&|k| std::env::var(k).ok(), client.as_deref());
+        self.app.as_ref().clone().with_harness(harness)
     }
 
     /// Serves MCP on stdin / stdout until the client disconnects.
@@ -89,7 +97,8 @@ impl Server {
         Parameters(a): Parameters<RememberArgs>,
         ctx: RequestContext<RoleServer>,
     ) -> ToolResult {
-        cancellable(&ctx, async || self.app.remember(a).await).await
+        let app = self.writer(&ctx);
+        cancellable(&ctx, async || app.remember(a).await).await
     }
 
     #[tool(
@@ -128,7 +137,8 @@ impl Server {
         Parameters(a): Parameters<CorrectArgs>,
         ctx: RequestContext<RoleServer>,
     ) -> ToolResult {
-        cancellable(&ctx, async || self.app.correct(a).await).await
+        let app = self.writer(&ctx);
+        cancellable(&ctx, async || app.correct(a).await).await
     }
 
     #[tool(
@@ -206,7 +216,8 @@ impl Server {
         Parameters(a): Parameters<SessionCaptureArgs>,
         ctx: RequestContext<RoleServer>,
     ) -> ToolResult {
-        cancellable(&ctx, async || self.app.session_capture(a).await).await
+        let app = self.writer(&ctx);
+        cancellable(&ctx, async || app.session_capture(a).await).await
     }
 
     #[tool(

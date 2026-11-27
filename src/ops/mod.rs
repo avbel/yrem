@@ -116,6 +116,10 @@ pub struct App {
     pub client: Client,
     /// Where `remember` and `correct` keep writes the server could not take; `None` fails them.
     pub outbox: Option<Outbox>,
+    /// Stored as `metadata.harness` on every write, unless the caller set one.
+    pub harness: Option<String>,
+    /// Namespace of writes that name none (`remember`, `session_capture`, `graph_relate`).
+    pub default_namespace: Option<String>,
 }
 
 impl App {
@@ -124,12 +128,31 @@ impl App {
         Self {
             client,
             outbox: None,
+            harness: None,
+            default_namespace: None,
         }
     }
 
     #[must_use]
     pub fn with_outbox(self, outbox: Option<Outbox>) -> Self {
         Self { outbox, ..self }
+    }
+
+    #[must_use]
+    pub fn with_harness(self, harness: Option<String>) -> Self {
+        Self { harness, ..self }
+    }
+
+    #[must_use]
+    pub fn with_default_namespace(self, default_namespace: Option<String>) -> Self {
+        Self {
+            default_namespace,
+            ..self
+        }
+    }
+
+    fn namespace_or_default(&self, namespace: Option<String>) -> Option<String> {
+        namespace.or_else(|| self.default_namespace.clone())
     }
 
     /// Runs an MCP tool by name with raw JSON arguments (`yrem call`).
@@ -176,7 +199,7 @@ impl App {
             certainty: args.certainty,
             domain: args.domain,
             source: args.source,
-            namespace: args.namespace,
+            namespace: self.namespace_or_default(args.namespace),
             metadata: args.metadata,
             created_at: args.created_at,
             sensitive: args.sensitive.then_some(true),
@@ -186,7 +209,7 @@ impl App {
             (None, None) => Err(Error::Invalid("`text` is required".into())),
             (Some(text), None) => {
                 let input = MemoryInput { text, ..defaults };
-                let mut req = remember_request(input, now)?;
+                let mut req = remember_request(input, now, self.harness.as_deref())?;
                 req.idempotency_key = args.idempotency_key;
                 guard("remember", args.force, &req)?;
                 let mut warnings = view::length_warnings(&[&req.text], false);
@@ -216,7 +239,7 @@ impl App {
                 }
                 let mut reqs = memories
                     .into_iter()
-                    .map(|m| remember_request(m.or(&defaults), now))
+                    .map(|m| remember_request(m.or(&defaults), now, self.harness.as_deref()))
                     .collect::<Result<Vec<_>>>()?;
                 guard("remember", args.force, &json!({ "memories": &reqs }))?;
                 if self.outbox.is_some() {
@@ -374,7 +397,8 @@ impl App {
 
     /// Native `POST /v1/correct`; on 501, emulated as get → remember → forget. Queued when the
     /// server is unavailable before anything was written.
-    pub async fn correct(&self, args: CorrectArgs) -> Result<Value> {
+    pub async fn correct(&self, mut args: CorrectArgs) -> Result<Value> {
+        args.metadata_merge = view::with_harness(args.metadata_merge, self.harness.as_deref());
         match self.correct_once(args.clone()).await {
             // The server went away during the cascade: sending now would only wait again.
             Ok(out) if out.get("cascade_queued").is_some() => Ok(out),
@@ -611,7 +635,7 @@ impl App {
                 .weight
                 .map(|w| clamp("weight", w, 0.0, 1.0))
                 .transpose()?,
-            namespace: args.namespace,
+            namespace: self.namespace_or_default(args.namespace),
         };
         guard("graph_relate", args.force, &req)?;
         Ok(shape(self.client.relate(&req).await?))
@@ -683,8 +707,9 @@ impl App {
         }
         let req = CaptureRequest {
             summary: non_empty("summary", args.summary)?,
-            namespace: args.namespace,
+            namespace: self.namespace_or_default(args.namespace),
             domain: args.domain,
+            metadata: view::with_harness(None, self.harness.as_deref()),
         };
         guard("session_capture", args.force, &req)?;
         Ok(shape(self.client.session_capture(&req).await?))
@@ -920,7 +945,11 @@ fn worth_keeping(e: &Error) -> bool {
     }
 }
 
-fn remember_request(m: MemoryInput, now: chrono::DateTime<Utc>) -> Result<RememberRequest> {
+fn remember_request(
+    m: MemoryInput,
+    now: chrono::DateTime<Utc>,
+    harness: Option<&str>,
+) -> Result<RememberRequest> {
     Ok(RememberRequest {
         text: non_empty("text", m.text)?,
         memory_type: m.memory_type.map(|t| t.as_str().to_owned()),
@@ -940,7 +969,7 @@ fn remember_request(m: MemoryInput, now: chrono::DateTime<Utc>) -> Result<Rememb
         source: m.source,
         namespace: m.namespace,
         emotional_state: None,
-        metadata: view::flag_sensitive(m.metadata, m.sensitive),
+        metadata: view::with_harness(view::flag_sensitive(m.metadata, m.sensitive), harness),
         created_at: m
             .created_at
             .map(|t| time::parse(&t, now).map(time::unix_secs))

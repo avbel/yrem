@@ -172,6 +172,10 @@ pub struct CaptureRequest {
     pub namespace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub domain: Option<String>,
+    /// Sent for the server to attach to the drafted facts; a server that does not read it
+    /// ignores it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]

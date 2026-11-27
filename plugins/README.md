@@ -26,6 +26,9 @@ Settings are `YREM_HOOK_*` environment variables, documented in
 
 ## Things to know
 
+- A session started in the home directory itself is the project `home` (`YREM_HOME_NAMESPACE`
+  renames it) and is briefed like one; see the main README. Every write carries
+  `metadata.harness`; the OpenCode and pi plugins set it through `YREM_HARNESS`.
 - The project comes from the event's `cwd`: the directory name of the git repository's main
   worktree, so `fluidd-wt-306` and `.claude/worktrees/agent-*` are `fluidd`. Claude Code and
   Codex send `cwd` themselves; the OpenCode and pi plugins put it in the JSON they build. The
@@ -62,6 +65,38 @@ Settings are `YREM_HOOK_*` environment variables, documented in
   - pi: `pi mcp add yrem -- yrem mcp`
   - Antigravity: `agy mcp add yrem yrem mcp`, or a `yrem` entry with `"command": "yrem"` and
     `"args": ["mcp"]` in `~/.gemini/config/mcp_config.json`
+
+## Antigravity permissions and upgrades
+
+`agy` asks for approval before every MCP tool call that `permissions.allow` in
+`~/.gemini/antigravity-cli/settings.json` does not list, and headless runs (`agy -p`) deny it.
+Allow yrem's tools (the server is called `yrem`, the entry is `mcp(<server>/<tool>)`):
+
+```json
+"permissions": {
+  "allow": [
+    "mcp(yrem/recall)", "mcp(yrem/memory_get)", "mcp(yrem/memory_current)",
+    "mcp(yrem/session_digest)", "mcp(yrem/conflict_list)",
+    "mcp(yrem/remember)", "mcp(yrem/correct)", "mcp(yrem/session_capture)",
+    "mcp(yrem/think)", "mcp(yrem/graph_relate)", "mcp(yrem/conflict_resolve)"
+  ]
+}
+```
+
+`mcp(yrem/*)` allows all twelve tools, `forget` included. Leave `mcp(yrem/forget)` out to keep
+deletions behind a prompt. The plugin copy lives in `~/.gemini/config/plugins/yrem`, imported by
+`agy plugin install`; nothing updates it when `yrem` or this repo does. To upgrade, from a clone
+at the release you want:
+
+```bash
+brew upgrade yrem                          # the binary the hooks and the MCP server call
+agy plugin uninstall yrem
+agy plugin install ./plugins/antigravity   # hooks, skill and manifest, copied again
+agy plugin list                            # yrem should show the new version
+```
+
+Restart `agy` afterwards. The hooks only call `yrem`, so a new `yrem` binary is enough when
+`hooks.json` did not change; reinstall only to refresh the manifest version or the skill.
 
 ## Host caveats
 

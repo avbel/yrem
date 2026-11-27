@@ -12,12 +12,15 @@ type Ctx = {
 };
 type Pi = { on: (event: string, handler: (event: any, ctx: Ctx) => unknown) => void };
 
+const env = { ...process.env, YREM_HARNESS: process.env.YREM_HARNESS ?? "pi" };
+
 function run(event: string, payload: object, detach: boolean, timeoutMs = PROMPT_TIMEOUT_MS): Promise<string> {
   return new Promise((resolve) => {
     let out = "";
     try {
       const args = ["hook", event, "--harness", "plain", ...(detach ? ["--detach"] : [])];
       const child = spawn("yrem", args, {
+        env,
         stdio: ["pipe", detach ? "ignore" : "pipe", "ignore"],
         detached: detach,
       });

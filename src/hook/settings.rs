@@ -1,6 +1,9 @@
 //! `YREM_HOOK_*` settings.
 
+use std::path::{Path, PathBuf};
+
 use super::gate::Gate;
+use super::project::{self, Names};
 
 /// How often the briefing carries maintenance lines (open conflicts, known gaps).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -32,6 +35,10 @@ pub struct Settings {
     pub namespace: Option<String>,
     /// Directory name to project name, for renamed repositories.
     pub aliases: Vec<(String, String)>,
+    /// The user's home directory; a session started in it is the `home_namespace` project.
+    pub home: Option<PathBuf>,
+    /// `YREM_HOME_NAMESPACE`, `home` by default.
+    pub home_namespace: String,
     pub digest: bool,
     /// Brief sessions that have no project.
     pub brief_without_project: bool,
@@ -68,6 +75,14 @@ impl Settings {
         Self {
             namespace: get("NAMESPACE"),
             aliases: get("NAMESPACE_ALIASES").map_or_else(Vec::new, |v| parse_aliases(&v)),
+            home: env("HOME")
+                .or_else(|| env("USERPROFILE"))
+                .filter(|h| !h.trim().is_empty())
+                .map(PathBuf::from),
+            home_namespace: env("YREM_HOME_NAMESPACE")
+                .map(|v| v.trim().to_owned())
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| project::HOME_NAMESPACE.to_owned()),
             digest: flag("DIGEST", true),
             brief_without_project: flag("BRIEF_WITHOUT_PROJECT", false),
             decisions: num("DECISIONS", 5),
@@ -101,6 +116,32 @@ impl Settings {
             think: flag("THINK", true),
             track_session: flag("TRACK_SESSION", true),
         }
+    }
+}
+
+impl Settings {
+    /// The project of a session working in `dir`: the explicit namespace, else what `dir` is.
+    #[must_use]
+    pub fn project_of(&self, dir: &Path) -> Option<String> {
+        self.namespace.clone().or_else(|| {
+            project::resolve_named(
+                dir,
+                &Names {
+                    aliases: &self.aliases,
+                    home: self.home.as_deref(),
+                    home_namespace: &self.home_namespace,
+                },
+            )
+        })
+    }
+
+    /// Whether rows of `namespace` are never shown to the model.
+    #[must_use]
+    pub fn is_excluded(&self, namespace: &str) -> bool {
+        self.gate
+            .excluded_namespaces
+            .iter()
+            .any(|p| namespace.starts_with(p.as_str()))
     }
 }
 

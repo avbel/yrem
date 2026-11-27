@@ -46,6 +46,7 @@ fn base(url: Option<&str>) -> Command {
         .env_remove("YANTRIKDB_SERVER_URL")
         .env_remove("YANTRIKDB_TOKEN")
         .env_remove("YREM_CONFIG")
+        .env_remove("YREM_HARNESS")
         .env_remove("YREM_URL")
         .env_remove("YREM_TOKEN")
         .env_remove("RUST_LOG")
@@ -642,7 +643,7 @@ fn call_metadata_merge_via_json() {
     ));
     assert_eq!(
         srv.requests()[0].body["metadata_merge"],
-        json!({"k": [1, 2]})
+        json!({"k": [1, 2], "harness": "cli"})
     );
 }
 

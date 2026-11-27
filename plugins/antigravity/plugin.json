@@ -2,7 +2,7 @@
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "yrem",
   "displayName": "yrem",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Memory hooks for Antigravity: session briefing, relevance-gated recall and capture, each a single yrem CLI call.",
   "author": {
     "name": "Andrey Belchikov",

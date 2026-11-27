@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use crate::client::Client;
 use crate::config::{Config, Overrides};
 use crate::error::Error;
+use crate::harness;
 use crate::hook::{Event, Harness};
 use crate::mcp::Server;
 use crate::ops::{
@@ -450,9 +451,16 @@ async fn execute(cli: Cli, url_from_env: bool, token_from_env: bool) -> anyhow::
     }
     let client = Client::new(&config)?;
     let outbox = Outbox::from_env(&|k| std::env::var(k).ok(), client.base().as_str());
-    let app = App::new(client).with_outbox(outbox);
+    let env = |k: &str| std::env::var(k).ok();
+    let app = App::new(client)
+        .with_outbox(outbox)
+        .with_harness(Some(harness::for_cli(&env)));
     let value = match cli.command {
         Command::Mcp => {
+            let namespace = std::env::current_dir()
+                .ok()
+                .and_then(|cwd| crate::hook::default_namespace(&env, &cwd));
+            let app = app.with_harness(None).with_default_namespace(namespace);
             Server::new(app).serve_stdio().await?;
             return Ok(ExitCode::SUCCESS);
         }

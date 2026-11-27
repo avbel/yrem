@@ -88,6 +88,14 @@ impl Harness {
         }
     }
 
+    /// The agent behind the hook; `Plain` plugins say it through `YREM_HARNESS`.
+    fn label(self) -> Option<&'static str> {
+        match self {
+            Self::Plain => None,
+            other => Some(other.name()),
+        }
+    }
+
     /// What stdout must carry when the hook has nothing to say: Antigravity reads every
     /// hook's stdout as JSON.
     fn nothing(self) -> Option<&'static str> {
@@ -194,10 +202,10 @@ async fn run_attached(
         return None;
     };
     let settings = Settings::from_env(&env);
-    let project = settings
-        .namespace
-        .clone()
-        .or_else(|| project::resolve(Path::new(input.project_dir()?), &settings.aliases));
+    let project = match input.project_dir() {
+        Some(dir) => settings.project_of(Path::new(dir)),
+        None => settings.namespace.clone(),
+    };
     let headless = is_headless(&env, &input);
     let gate = settings.gate.clone().with_project(project.clone());
     let hook = Hook {
@@ -209,6 +217,7 @@ async fn run_attached(
         project,
         gate,
         headless,
+        label: crate::harness::for_hook(&env, harness.label()),
     };
     match hook.handle(event).await {
         Ok(text) => text.map(|t| hook.format(event, &t)),
@@ -234,6 +243,8 @@ struct Hook<'a> {
     gate: Gate,
     /// Machine-driven session: no briefing, no recall.
     headless: bool,
+    /// Stored as `metadata.harness` on what the hook writes.
+    label: Option<String>,
 }
 
 /// SDK-driven Claude Code runs, `codex exec` and Codex subagents write their own prompts.
@@ -267,7 +278,8 @@ impl Hook<'_> {
             &config,
             Duration::from_secs(2),
             total,
-        )?))
+        )?)
+        .with_harness(self.label.clone()))
     }
 
     fn session(&self) -> &str {
@@ -351,6 +363,9 @@ impl Hook<'_> {
         let Some(query) = query::build(self.input.prompt.as_deref().unwrap_or_default()) else {
             return Ok(None);
         };
+        if self.repeats_prompt() {
+            return Ok(None);
+        }
         let app = self.app(Duration::from_secs(5))?;
         let resp = app
             .recall(RecallArgs {
@@ -398,6 +413,17 @@ impl Hook<'_> {
             }
         }
         Ok(render::recall_text(&hits))
+    }
+
+    /// Whether this is another model call of a turn already recalled for. Antigravity says so
+    /// with `invocationNum`; without it the prompt text is the only sign.
+    fn repeats_prompt(&self) -> bool {
+        if self.harness != Harness::Antigravity || self.input.invocation_num.is_some() {
+            return false;
+        }
+        let prompt = self.input.prompt.as_deref().unwrap_or_default();
+        let key = format!("{:016x}", fnv1a(prompt));
+        !self.store.claim(self.session(), Kind::Prompt, &key)
     }
 
     /// Whether `hit` was injected in this project within a day and does not match well
@@ -594,4 +620,14 @@ fn spawn_detached(
         stdin.write_all(input.as_bytes())?;
     }
     Ok(())
+}
+
+/// Namespace for writes that name none, from the working directory of the process: the
+/// project a hook started there would use, unless its rows are excluded from injection.
+#[must_use]
+pub fn default_namespace(env: &impl Fn(&str) -> Option<String>, cwd: &Path) -> Option<String> {
+    let settings = Settings::from_env(env);
+    settings
+        .project_of(cwd)
+        .filter(|p| !settings.is_excluded(p))
 }

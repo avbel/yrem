@@ -1,6 +1,6 @@
 {
   "name": "yrem-pi",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "yrem memory hooks for pi",

@@ -13,12 +13,14 @@ type Ctx = {
   event: { subscribe: (options: { signal: AbortSignal }) => AsyncIterable<any> };
 };
 
+const env = { ...process.env, YREM_HARNESS: process.env.YREM_HARNESS ?? "opencode" };
+
 function yrem(event: string, payload: object, detach = false): Promise<string> {
   return new Promise((resolve) => {
     let out = "";
     try {
       const args = ["hook", event, "--harness", "plain", ...(detach ? ["--detach"] : [])];
-      const child = spawn("yrem", args, { stdio: ["pipe", "pipe", "ignore"] });
+      const child = spawn("yrem", args, { env, stdio: ["pipe", "pipe", "ignore"] });
       const timer = setTimeout(() => child.kill("SIGKILL"), TIMEOUT_MS);
       child.stdout.on("data", (chunk) => (out += chunk));
       child.on("error", () => resolve(""));

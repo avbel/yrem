@@ -4,6 +4,7 @@ pub mod cli;
 pub mod client;
 pub mod config;
 pub mod error;
+pub mod harness;
 pub mod hook;
 pub mod mcp;
 pub mod ops;

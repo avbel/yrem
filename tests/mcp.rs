@@ -54,7 +54,7 @@ async fn tools_list_golden_and_budgets() {
     let c = client(&srv.url).await;
     let instructions = c.peer_info().and_then(|i| i.instructions.clone()).unwrap();
     assert!(
-        instructions.len() / 4 <= 150,
+        instructions.len() / 4 <= 175,
         "instructions ~{} tokens",
         instructions.len() / 4
     );

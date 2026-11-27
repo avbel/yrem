@@ -5,7 +5,7 @@ Remote-only client for [`yantrikdb-server`](https://github.com/yantrikos/yantrik
 - No engine, no embedder, no Python. The server does the embedding.
 - Built on [rmcp](https://github.com/modelcontextprotocol/rust-sdk) (the official Rust MCP SDK), tokio, reqwest and clap.
 - One Rust struct per operation generates the CLI flags, the `--help` text and the MCP JSON Schema, so the CLI and MCP can't drift apart.
-- Compact agent context: 12 MCP tools in ≤ 2k tokens plus ~150 tokens of instructions. `yantrikdb-mcp` ships 21 tools (≈ 14k tokens) plus ~950 tokens of instructions, and most of those tools fail against a remote server.
+- Compact agent context: 12 MCP tools in ≤ 2k tokens plus ~170 tokens of instructions. `yantrikdb-mcp` ships 21 tools (≈ 14k tokens) plus ~950 tokens of instructions, and most of those tools fail against a remote server.
 
 ## Why not `yantrikdb-mcp` in remote mode?
 
@@ -45,6 +45,8 @@ Resolution order: command-line flags > environment > config file.
 | Config file | `--config` | `YREM_CONFIG` | — |
 | [Outbox](#outbox) directory, `off` to disable | — | `YREM_OUTBOX_DIR` | — |
 
+`YREM_HARNESS` (see [Which agent wrote it](#which-agent-wrote-it)) and `YREM_HOME_NAMESPACE` (see [Project and briefing](#project-and-briefing)) are environment-only.
+
 Config file: `$XDG_CONFIG_HOME/yrem/config.toml`, default `~/.config/yrem/config.toml`. Unknown keys are rejected.
 
 Keep the token out of the file by storing it in the keychain:
@@ -81,7 +83,7 @@ agy plugin install ./plugins/antigravity
 agy mcp add yrem yrem mcp
 ```
 
-Antigravity has no session-end or pre-compact event, so the plugin never opens a tracked server session and never runs `think`; run `yrem think` yourself now and then, or let another harness do it. See the [host caveats](plugins/README.md#host-caveats).
+Antigravity has no session-end or pre-compact event, so the plugin never opens a tracked server session and never runs `think`; run `yrem think` yourself now and then, or let another harness do it. Headless runs and unattended turns deny MCP tools that `~/.gemini/antigravity-cli/settings.json` does not allow: see the [recommended allow-list and how to upgrade the plugin](plugins/README.md#antigravity-permissions-and-upgrades). See the [host caveats](plugins/README.md#host-caveats).
 
 ### 2. Claude Code — MCP
 
@@ -276,6 +278,19 @@ Time arguments (`since`, `until`) accept RFC 3339 (`2026-10-01T09:00:00+02:00`),
 
 Cancelling a tool call in the agent aborts the in-flight HTTP request.
 
+## Which agent wrote it
+
+Every write yrem makes carries `metadata.harness`: `remember` (each memory of a batch too), the new memory `correct` writes (as `metadata_merge` on the native endpoint, in the copied metadata when emulated, replacing the old memory's value), and `session_capture`, including the hooks' auto-capture. A `harness` the caller set in `metadata` is never overwritten.
+
+| Caller | Value |
+|---|---|
+| `yrem <command>` | `YREM_HARNESS`, else `cli` |
+| `yrem hook --harness claude\|codex\|antigravity` | `claude`, `codex`, `antigravity` (`YREM_HARNESS` wins) |
+| `yrem hook --harness plain` | `YREM_HARNESS`; the OpenCode and pi plugins set `opencode` and `pi`. Without it nothing is stamped |
+| `yrem mcp` | `YREM_HARNESS`, else the client's `clientInfo.name` mapped to a known harness (`claude-code` → `claude`, a name with `codex` → `codex`, `antigravity` / `gemini` / `agy` → `antigravity`, `opencode`, `pi`), else the name lowercased |
+
+`session_capture` has no `metadata` field in the HTTP contract this client knows (`/v1/session/end` takes `summary`, `namespace`, `domain`). yrem sends `metadata` anyway, and the server ignores it: against yantrikdb-server 0.20.0 (checked 2026-11-27) drafted facts carry only `kind` and `provisional`, so captured facts have no `harness`. They still have `source=session_auto_capture`, which the hooks already use to recognise them.
+
 ## Corrections
 
 `yantrikdb-server` currently rejects `POST /v1/correct` with 501 (no replicated write path yet). yrem tries the native call first and emulates when it gets 501:
@@ -373,6 +388,10 @@ Needs yrem 0.2.1 or newer (the outbox, project-only briefings and request filter
 
 The project is the directory name of the git repository's main worktree, taken from the event's `cwd`: `~/Projects/fluidd`, `~/Projects/fluidd-wt-306` and `~/Projects/fluidd/.claude/worktrees/agent-x` are all `fluidd`. `YREM_HOOK_NAMESPACE_ALIASES=bw-lite-desktop=vaultkeeper` maps the directory name of a renamed repository to its current name. Without `cwd`, or outside a git repository, there is no project (the process's own working directory is never used). An explicit `YREM_HOOK_NAMESPACE` is the project and also filters recall to that namespace; a project found from `cwd` is never a filter.
 
+A session started in the home directory itself (`$HOME`, exactly: not a subdirectory) is the project `home`, or `YREM_HOME_NAMESPACE`, so its captures, tracked session and briefing do not land in the server's `default`. A home session is briefed like a project although `~` is not a git repository. The rule applies before the git check and not to aliases. Every other directory outside a git repository still has no project.
+
+`yrem mcp` uses the same resolver on its own working directory: a `remember`, `session_capture` or `graph_relate` that names no `namespace` goes to that project (aliases, `YREM_HOOK_NAMESPACE` and the `home` rule apply; a project whose name starts with an entry of `YREM_HOOK_EXCLUDE_NAMESPACES` is not used). An explicit `namespace` is kept, and when nothing resolves the server's default applies as before. The CLI is unchanged: it never guesses a namespace. Note that some hosts start MCP servers in a directory of their own; there the default is that directory's project or none.
+
 The project is the namespace of the briefing's narrative, of captured lines (and of the duplicate check before them) and of the tracked session. It also drives the relevance gate and the cooldown below.
 
 The briefing's live decisions are picked client-side from `memory list` (newest first by `created_at`, which does not reinforce anything). The server's `top_decisions` is the store's all-time highest importance, the same rows in every project, so it is not used. Picked: up to `YREM_HOOK_DECISIONS` rows of the project (its namespace, or a text that names it: a project name of 5 or more characters, as a whole word not followed by `-`, so `fluidd` is in "Fluidd task #3" but not in "fluidd-bench"; a shorter name matches by namespace only), then up to `YREM_HOOK_OTHER_PROJECTS` (default 0) rows of other namespaces from the last 7 days. A session without a project gets no briefing unless `YREM_HOOK_BRIEF_WITHOUT_PROJECT=1`, and then up to `YREM_HOOK_DECISIONS` rows from the last 7 days. Sensitive, superseded and auto-captured rows, merges of captured prompts and excluded namespaces are skipped, and so is a merge with a sensitive or auto-captured source (the next row takes its place): `think` labels every merge `source=user`, whatever it was made from. The narrative ("Where things stood") is the digest's head, shown only when it names a memory that passes the same checks: it is found among the listed rows or read by its rid, and dropped when it has no rid, is sensitive, superseded, excluded, or merged from something sensitive. A briefing sends the digest and the listings at the same time (the newest 100 rows, and the project's newest 50 when there is a project) and waits 8 seconds at most for all of it: a listing that fails or runs late leaves out the decisions and does not mark the server down.
@@ -406,6 +425,8 @@ The numbers come from replaying real prompts against a real store (see `src/hook
 | Variable | Default | Meaning |
 |---|---|---|
 | `YREM_HOOK_NAMESPACE` | — | An explicit namespace: the project, and a filter for recall. Unset: the project comes from `cwd`. |
+| `YREM_HOME_NAMESPACE` | `home` | Project of a session started in `$HOME` itself. |
+| `YREM_HARNESS` | — | Overrides the harness label stored in `metadata.harness`, for the CLI, the hooks and `yrem mcp`. |
 | `YREM_HOOK_NAMESPACE_ALIASES` | — | `old=new,old2=new2`: directory name of a renamed repository to its project name, e.g. `bw-lite-desktop=vaultkeeper`. |
 | `YREM_HOOK_DIGEST` | `1` | Inject the briefing. |
 | `YREM_HOOK_DECISIONS` | `5` | Live decisions of the project in the briefing; `0` skips the listing. |

@@ -101,6 +101,19 @@ pub(super) fn flag_sensitive(
     Some(metadata)
 }
 
+/// Adds `harness` unless the caller already set one.
+pub(super) fn with_harness(
+    metadata: Option<Map<String, Value>>,
+    harness: Option<&str>,
+) -> Option<Map<String, Value>> {
+    let Some(harness) = harness else {
+        return metadata;
+    };
+    let mut metadata = metadata.unwrap_or_default();
+    metadata.entry("harness").or_insert_with(|| harness.into());
+    Some(metadata)
+}
+
 /// Memory metadata as an object: the server sends it as an object or as a JSON string.
 pub(super) fn metadata_object(metadata: Value) -> Map<String, Value> {
     match metadata {

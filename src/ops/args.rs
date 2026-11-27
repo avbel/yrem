@@ -145,7 +145,7 @@ pub struct RememberArgs {
     )]
     pub source: Option<String>,
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Row-level tag within the token's database, not a separate database. Omit for the session's project namespace (MCP) or the server's default namespace (CLI).",
         long
     )]
     pub namespace: Option<String>,
@@ -358,7 +358,7 @@ pub struct GraphRelateArgs {
     #[schemars(range(min = 0.0, max = 1.0))]
     pub weight: Option<f64>,
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Row-level tag within the token's database, not a separate database. Omit for the session's project namespace (MCP) or the server's default namespace (CLI).",
         long
     )]
     pub namespace: Option<String>,
@@ -469,7 +469,7 @@ pub struct SessionCaptureArgs {
     )]
     pub summary: String,
     #[arg(
-        long_help = "Row-level tag within the token's database, not a separate database. Omit for the default namespace.",
+        long_help = "Row-level tag within the token's database, not a separate database. Omit for the session's project namespace (MCP) or the server's default namespace (CLI).",
         long
     )]
     pub namespace: Option<String>,

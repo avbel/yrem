@@ -35,6 +35,8 @@ pub enum Kind {
     Seen,
     /// Transcript line hashes sent to (or deliberately kept out of) `session_capture`.
     Captured,
+    /// Hashes of the prompts already recalled for.
+    Prompt,
 }
 
 impl Kind {
@@ -42,6 +44,7 @@ impl Kind {
         match self {
             Self::Seen => "seen",
             Self::Captured => "captured",
+            Self::Prompt => "prompt",
         }
     }
 }

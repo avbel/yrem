@@ -236,3 +236,47 @@ fn stop_captures_typed_lines_from_the_antigravity_transcript() {
     assert_eq!(env.hook(&["pre-compact"], &ev), "{}");
     srv.assert_done();
 }
+
+/// Shaped like a real `transcript.jsonl` of `agy` 1.5.x (personal content replaced): typed
+/// turns carry Antigravity's wrapper and metadata spans, hook injections are `SYSTEM_MESSAGE`
+/// records, and a long review brief is truncated before its closing tag.
+const TRANSCRIPT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/antigravity/transcript.jsonl"
+);
+
+#[test]
+fn the_transcript_yields_what_the_user_typed_and_nothing_else() {
+    let lines = yrem::hook::transcript::user_lines(Path::new(TRANSCRIPT));
+    assert_eq!(
+        lines,
+        [
+            "The billing service runs on PostgreSQL 17 and the nightly job at 02:00 UTC reconciles invoices.",
+            "Carol is on call this week and owns the pager rotation.",
+        ]
+    );
+    assert!(!yrem::hook::transcript::is_headless_session(Path::new(
+        TRANSCRIPT
+    )));
+}
+
+#[test]
+fn a_repeated_prompt_without_an_invocation_number_is_recalled_once() {
+    let srv =
+        FakeServer::start(vec![Step::post("/v1/recall").json(
+            json!({"results": [hit("good", "Payments uses PostgreSQL", 0.91)]}),
+        )]);
+    let env = Env::new(&srv.url, "repeat");
+    let ev = event(
+        "conv-5",
+        &env.repo("payments"),
+        &json!({"lastUserInput": PROMPT}),
+    );
+    assert!(injected(&env.hook(&["prompt"], &ev)).contains("Payments uses PostgreSQL"));
+    assert_eq!(
+        env.hook(&["prompt"], &ev),
+        "{}",
+        "the next model call of the turn"
+    );
+    srv.assert_done();
+}

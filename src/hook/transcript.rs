@@ -247,12 +247,14 @@ fn strip_lines(text: &str) -> Option<String> {
     Some(unwrap_queued(&out))
 }
 
-/// The body of Antigravity's `<USER_REQUEST>` wrapper; `text` as is when it has none.
+/// The body of Antigravity's `<USER_REQUEST>` wrapper; `text` as is when it has none. A request
+/// Antigravity truncated (a pasted diff) loses the closing tag; the body runs to the end.
 fn user_request(text: &str) -> &str {
     let (open, close) = USER_REQUEST;
-    text.split_once(open)
-        .and_then(|(_, rest)| rest.split_once(close))
-        .map_or(text, |(body, _)| body)
+    let Some((_, rest)) = text.split_once(open) else {
+        return text;
+    };
+    rest.split_once(close).map_or(rest, |(body, _)| body)
 }
 
 fn collapse(text: &str) -> String {
